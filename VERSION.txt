@@ -1,0 +1,22 @@
+Project: tlog2chart_P3
+
+Version: 1.3.0
+Date: 2026-03-03
+
+Status:
+- Stable baseline after refactor
+- Verified with single tlog workflow
+
+Summary:
+- Refactored from single-file script to multi-module project
+- No functional behavior change from v1.1
+- Phase 3 analysis (Step 1–5) verified
+- RF ON/OFF definition based on RF:UC (* / -)
+
+Notes:
+- This version establishes the foundation for:
+  Step 6: Pulse analysis
+  Step 7: Statistics & distributions
+  Step 8: CW chart analysis
+  Step 9: Pulse waveform analysis
+  Step 10: Interface simulation (DNet / ECAT / ECAT+)
