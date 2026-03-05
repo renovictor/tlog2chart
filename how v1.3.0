@@ -1,0 +1,32 @@
+[33mtag v1.3.0[m
+Tagger: Victor Huang <Victor.Huang@asm.com>
+Date:   Wed Mar 4 23:56:19 2026 +0900
+
+Release v1.3.0
+
+[33mcommit dcb8b3b1062a837d9153c210114835ebde1d3d1a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;33mtag: [m[1;33mv1.3.0[m[33m)[m
+Author: Victor Huang <Victor.Huang@asm.com>
+Date:   Wed Mar 4 23:50:03 2026 +0900
+
+    Chore: add .gitignore
+
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mnew file mode 100644[m
+[1mindex 0000000..a5377fd[m
+[1m--- /dev/null[m
+[1m+++ b/.gitignore[m
+[36m@@ -0,0 +1,13 @@[m
+[32m+[m[32m# Python[m
+[32m+[m[32m__pycache__/[m
+[32m+[m[32m*.pyc[m
+[32m+[m[32m.venv/[m
+[32m+[m
+[32m+[m[32m# IDE[m
+[32m+[m[32m.idea/[m
+[32m+[m[32m.vscode/[m
+[32m+[m
+[32m+[m[32m# Build[m
+[32m+[m[32mbuild/[m
+[32m+[m[32mdist/[m
+[32m+[m[32m*.spec[m
+\ No newline at end of file[m
