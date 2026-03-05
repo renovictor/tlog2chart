@@ -94,6 +94,15 @@ class Tlog2ChartP2App(tk.Tk):
         self._ruler_ax = None  # axes where point A was clicked
         self._ruler_ptA = None  # (x, y) of point A in data coords
         self._ruler_line = None  # Line2D artist
+        # ---------------- Ruler v2 (drag) state ----------------
+        self._ruler_dragging = False
+        self._ruler_ax = None  # axes used during dragging
+        self._ruler_ptA = None  # (x0, y0) start point
+
+        self._ruler_preview_line = None
+        self._ruler_preview_text = None
+
+        self._ruler_items = []  # list of (line_artist, text_artist) for multiple rulers
         self._ruler_text = None  # Text/Annotation artist
         self._smith_pth_after = None  # debounce handle
 
@@ -471,28 +480,42 @@ class Tlog2ChartP2App(tk.Tk):
                 self.canvas.draw_idle()
 
     def _clear_markups(self):
-        """Remove temporary markup artists (Ruler now; later Line/Shape)."""
-        # Remove ruler line
-        if self._ruler_line is not None:
+        """Remove temporary markup artists (Ruler/Line/Shape in the future)."""
+
+        # Remove preview (dragging) artists
+        if self._ruler_preview_line is not None:
             try:
-                self._ruler_line.remove()
+                self._ruler_preview_line.remove()
             except Exception:
                 pass
-            self._ruler_line = None
+            self._ruler_preview_line = None
 
-        # Remove ruler text
-        if self._ruler_text is not None:
+        if self._ruler_preview_text is not None:
             try:
-                self._ruler_text.remove()
+                self._ruler_preview_text.remove()
             except Exception:
                 pass
-            self._ruler_text = None
+            self._ruler_preview_text = None
 
-        # Reset state
-        self._ruler_ptA = None
+        # Remove all finalized ruler items
+        for ln, txt in list(getattr(self, "_ruler_items", [])):
+            if ln is not None:
+                try:
+                    ln.remove()
+                except Exception:
+                    pass
+            if txt is not None:
+                try:
+                    txt.remove()
+                except Exception:
+                    pass
+        self._ruler_items = []
+
+        # Reset drag state
+        self._ruler_dragging = False
         self._ruler_ax = None
+        self._ruler_ptA = None
 
-        # Redraw
         if hasattr(self, "canvas") and self.canvas is not None:
             self.canvas.draw_idle()
 
@@ -812,10 +835,29 @@ class Tlog2ChartP2App(tk.Tk):
                 self.zoom_last_y = event.y
                 self.canvas.draw_idle()
 
+        # -------- Ruler v2 (drag) motion --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
+            if getattr(self, "_ruler_dragging", False):
+                self._ruler_update_drag(event)
+                return  # consume motion update (avoid interfering with other hover actions)
+
     def _on_mpl_press(self, event):
         if event.button != 1:
             return
-        # -------- Ruler tool (Milestone C) --------
+        # -------- Ruler v2 (drag) press --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
+            # Zoom zone always wins
+            if self._event_in_zoom_zone(event):
+                # Let zoom logic handle it (do not start ruler)
+                return
+
+            # Must click inside a plot axes
+            if event.inaxes is None or event.xdata is None or event.ydata is None:
+                return
+
+            self._ruler_start_drag(event)
+            return
+
         # -------- Ruler tool (Milestone C) --------
         if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
             # If user clicks in zoom zone, let zoom logic handle it (Ruler must NOT block zoom)
@@ -834,8 +876,123 @@ class Tlog2ChartP2App(tk.Tk):
             self.zoom_last_y = event.y
 
     def _on_mpl_release(self, event):
+        # -------- Ruler v2 (drag) release --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
+            if getattr(self, "_ruler_dragging", False):
+                self._ruler_finish_drag(event)
+                return
         self.zoom_active = False
         self.zoom_last_y = None
+
+    def _ruler_start_drag(self, event):
+        ax = event.inaxes
+        x0 = float(event.xdata)
+        y0 = float(event.ydata)
+
+        self._ruler_dragging = True
+        self._ruler_ax = ax
+        self._ruler_ptA = (x0, y0)
+
+        # Create preview line/text if not exist
+        if self._ruler_preview_line is None:
+            (self._ruler_preview_line,) = ax.plot([x0, x0], [y0, y0], color="red", linewidth=1.2)
+
+        if self._ruler_preview_text is None:
+            self._ruler_preview_text = ax.annotate(
+                "",
+                xy=(x0, y0),
+                xytext=(12, 12),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.9),
+                arrowprops=dict(arrowstyle="->", color="gray", lw=1.0),
+            )
+
+        self.canvas.draw_idle()
+
+    def _ruler_update_drag(self, event):
+        # Must remain in same axes; if user drags outside, we still use last valid point
+        if self._ruler_ax is None or self._ruler_ptA is None:
+            return
+
+        ax = self._ruler_ax
+
+        if event.xdata is None or event.ydata is None:
+            return
+
+        x1 = float(event.xdata)
+        y1 = float(event.ydata)
+
+        x0, y0 = self._ruler_ptA
+        dx = x1 - x0
+        dy = y1 - y0
+
+        # Update preview line
+        if self._ruler_preview_line is not None:
+            self._ruler_preview_line.set_data([x0, x1], [y0, y1])
+
+        # Label follows cursor (your choice 1B)
+        label = f"dx = {dx:.3f}\ndy = {dy:.3f}"
+        if self._ruler_preview_text is not None:
+            self._ruler_preview_text.set_text(label)
+            self._ruler_preview_text.xy = (x1, y1)
+            self._ruler_preview_text.set_visible(True)
+
+        self.canvas.draw_idle()
+
+    def _ruler_finish_drag(self, event):
+        if self._ruler_ax is None or self._ruler_ptA is None:
+            self._ruler_dragging = False
+            return
+
+        ax = self._ruler_ax
+        x0, y0 = self._ruler_ptA
+
+        # Use release point if valid; else keep last preview end
+        if event.xdata is None or event.ydata is None:
+            # do not finalize if release is outside axes
+            self._ruler_dragging = False
+            return
+
+        x1 = float(event.xdata)
+        y1 = float(event.ydata)
+
+        dx = x1 - x0
+        dy = y1 - y0
+        label = f"dx = {dx:.3f}\ndy = {dy:.3f}"
+
+        # Create FINAL line/text (keep multiple, all red)
+        (ln,) = ax.plot([x0, x1], [y0, y1], color="red", linewidth=1.2)
+        txt = ax.annotate(
+            label,
+            xy=(x1, y1),
+            xytext=(12, 12),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.9),
+            arrowprops=dict(arrowstyle="->", color="gray", lw=1.0),
+        )
+        self._ruler_items.append((ln, txt))
+
+        # Hide preview (keep preview objects for next drag, but not visible)
+        if self._ruler_preview_line is not None:
+            try:
+                self._ruler_preview_line.remove()
+            except Exception:
+                pass
+            self._ruler_preview_line = None
+
+        if self._ruler_preview_text is not None:
+            try:
+                self._ruler_preview_text.remove()
+            except Exception:
+                pass
+            self._ruler_preview_text = None
+
+        # Reset drag state
+        self._ruler_dragging = False
+        self._ruler_ax = None
+        self._ruler_ptA = None
+
+        self.canvas.draw_idle()
 
     def _zoom_x(self, scale: float):
         x0, x1 = self.ax_power.get_xlim()
