@@ -6,7 +6,14 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
+---
 
+## [1.3.1] – 2026-03-05
+### Changed
+- Ruler tool upgraded to JMP-style drag workflow (press→drag preview→release finalize)
+- Support multiple ruler lines (temporary markups)
+### Fixed
+- Hover interactions stabilized across Graph and Smith chart
 
 ---
 
