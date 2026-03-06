@@ -109,6 +109,13 @@ class Tlog2ChartP2App(tk.Tk):
         # ---------------- Annotate tool state (Task D) ----------------
         self._annot_items = []  # list of annotation artists on Graph canvas
 
+        # ---------------- Line tool state (Task E) ----------------
+        self._line_dragging = False
+        self._line_ax = None
+        self._line_ptA = None  # (x0, y0)
+        self._line_preview = None  # Line2D preview
+        self._line_items = []  # list of finalized Line2D artists (multiple)
+
         # Build UI
         self._build_top_bar()
         self._build_tabs()
@@ -533,6 +540,28 @@ class Tlog2ChartP2App(tk.Tk):
                     pass
         self._annot_items = []
 
+        # Remove line preview
+        if getattr(self, "_line_preview", None) is not None:
+            try:
+                self._line_preview.remove()
+            except Exception:
+                pass
+            self._line_preview = None
+
+        # Remove all finalized line items
+        for ln in list(getattr(self, "_line_items", [])):
+            if ln is not None:
+                try:
+                    ln.remove()
+                except Exception:
+                    pass
+        self._line_items = []
+
+        # Reset line drag state
+        self._line_dragging = False
+        self._line_ax = None
+        self._line_ptA = None
+
         # Reset drag state
         self._ruler_dragging = False
         self._ruler_ax = None
@@ -746,6 +775,10 @@ class Tlog2ChartP2App(tk.Tk):
                         variable=self.tool_mode_var,
                         command=self._on_tool_mode_changed).pack(side=tk.LEFT, padx=(8, 0))
 
+        ttk.Radiobutton(tool_bar, text="Line", value="LINE",
+                        variable=self.tool_mode_var,
+                        command=self._on_tool_mode_changed).pack(side=tk.LEFT, padx=(8, 0))
+
         ttk.Label(tool_bar, text="  Hover Item:").pack(side=tk.LEFT, padx=(12, 4))
 
         self._arrow_target_cb = ttk.Combobox(
@@ -867,6 +900,12 @@ class Tlog2ChartP2App(tk.Tk):
                 self._ruler_update_drag(event)
                 return  # consume motion update (avoid interfering with other hover actions)
 
+        # -------- Line tool (Task E) motion --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "LINE":
+            if getattr(self, "_line_dragging", False):
+                self._line_update_drag(event)
+                return
+
     def _on_mpl_press(self, event):
         if event.button != 1:
             return
@@ -884,6 +923,13 @@ class Tlog2ChartP2App(tk.Tk):
             self._annotate_click(event)
             return
 
+        # -------- Line tool (Task E) --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "LINE":
+            if event.inaxes is None or event.xdata is None or event.ydata is None:
+                return
+            self._line_start_drag(event)
+            return
+
         # -------- Ruler v2 (drag) press --------
         if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
             if event.inaxes is None or event.xdata is None or event.ydata is None:
@@ -899,6 +945,12 @@ class Tlog2ChartP2App(tk.Tk):
             return
 
     def _on_mpl_release(self, event):
+        # -------- Line tool (Task E) release --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "LINE":
+            if getattr(self, "_line_dragging", False):
+                self._line_finish_drag(event)
+                return
+
         # -------- Ruler v2 (drag) release --------
         if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
             if getattr(self, "_ruler_dragging", False):
@@ -1040,6 +1092,84 @@ class Tlog2ChartP2App(tk.Tk):
         self._ruler_dragging = False
         self._ruler_ax = None
         self._ruler_ptA = None
+
+        self.canvas.draw_idle()
+
+    def _line_start_drag(self, event):
+        ax = event.inaxes
+        x0 = float(event.xdata)
+        y0 = float(event.ydata)
+
+        self._line_dragging = True
+        self._line_ax = ax
+        self._line_ptA = (x0, y0)
+
+        # Create preview line
+        if self._line_preview is None:
+            (self._line_preview,) = ax.plot([x0, x0], [y0, y0], color="red", linewidth=1.2)
+
+        self.canvas.draw_idle()
+
+    def _line_update_drag(self, event):
+        if self._line_ax is None or self._line_ptA is None:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+
+        ax = self._line_ax
+        x0, y0 = self._line_ptA
+        x1 = float(event.xdata)
+        y1 = float(event.ydata)
+
+        # Ctrl constrain (vertical/horizontal)
+        if getattr(event, "key", None) == "control":
+            if abs(x1 - x0) >= abs(y1 - y0):
+                y1 = y0  # horizontal
+            else:
+                x1 = x0  # vertical
+
+        if self._line_preview is not None:
+            self._line_preview.set_data([x0, x1], [y0, y1])
+
+        self.canvas.draw_idle()
+
+    def _line_finish_drag(self, event):
+        if self._line_ax is None or self._line_ptA is None:
+            self._line_dragging = False
+            return
+        if event.xdata is None or event.ydata is None:
+            # Released outside axes: cancel preview
+            self._line_dragging = False
+            return
+
+        ax = self._line_ax
+        x0, y0 = self._line_ptA
+        x1 = float(event.xdata)
+        y1 = float(event.ydata)
+
+        # Ctrl constrain at release as well (consistent)
+        if getattr(event, "key", None) == "control":
+            if abs(x1 - x0) >= abs(y1 - y0):
+                y1 = y0
+            else:
+                x1 = x0
+
+        # Create final line (multiple supported)
+        (ln,) = ax.plot([x0, x1], [y0, y1], color="red", linewidth=1.2)
+        self._line_items.append(ln)
+
+        # Remove preview artist (we create a new preview next time)
+        if self._line_preview is not None:
+            try:
+                self._line_preview.remove()
+            except Exception:
+                pass
+            self._line_preview = None
+
+        # Reset state
+        self._line_dragging = False
+        self._line_ax = None
+        self._line_ptA = None
 
         self.canvas.draw_idle()
 

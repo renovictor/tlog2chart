@@ -1,6 +1,6 @@
 Project: tlog2chart_P3
 
-Version: 1.3.2
+Version: 1.3.3
 Date: 2026-03-07
 
 Status:
@@ -20,3 +20,55 @@ Notes:
   Step 8: CW chart analysis
   Step 9: Pulse waveform analysis
   Step 10: Interface simulation (DNet / ECAT / ECAT+)
+
+[1.0.0] – Initial
+### Added
+- Basic tlog parsing
+- Graph visualization
+- Smith chart visualization
+
+## \[1.1.0] – 2025-02-20
+### Added
+- Phase 3 analysis framework
+- Step 1–5 analysis flow
+- Word report export (PNG figures + tables)
+### Changed
+- Added RF-cycle-based analysis concept
+
+## \[1.2.0] – 2026-03-03
+### Changed
+- Refactored from a single-file script into a multi-module project structure
+- Separated GUI, data parser, plotting, and analysis logic
+- Improved maintainability and extensibility without changing behavior
+### Fixed
+- RF ON/OFF detection unified to use RF:UC (\* / -)
+- Step 3 RF-cycle metrics consistency
+### Verified
+- Phase 3 analysis Step 1–5
+- Single tlog workflow
+- Word report export
+
+## [1.3.1] – 2026-03-05
+### Changed
+- Ruler tool upgraded to JMP-style drag workflow (press→drag preview→release finalize)
+- Support multiple ruler lines (temporary markups)
+### Fixed
+- Hover interactions stabilized across Graph and Smith chart
+
+## [1.3.2] – 2026-03-xx
+### Added
+- Annotate tool (click → input text → place label; multiple; Clear Markups supported)
+### Changed
+- Tool routing: zoom zone always wins across all tool modes
+### Fixed
+- Prevent Ruler from falling back to legacy two-click handler (legacy kept but unused)
+
+  ## [1.3.3] – 2026-03-xx
+### Added
+- Line tool (press → drag preview → release finalize)
+- Multiple lines supported (temporary markups)
+### Changed
+- Clear Markups removes rulers + annotations + lines
+- Zoom zone always wins across all tool modes
+### Notes
+- Custom color will be implemented for Shape tools (Rect/Circle) in next task
