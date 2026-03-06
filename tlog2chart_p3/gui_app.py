@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from .version import APP_NAME, APP_VERSION
 import os
 import threading
 import traceback
@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -32,7 +32,7 @@ class Tlog2ChartP2App(tk.Tk):
             pass
 
         ver = read_project_version()
-        self.title(f"tlog2chart_P3 v{ver}")
+        self.title(f"{APP_NAME} v{APP_VERSION}")
         self.geometry("1280x760")
 
         self._smith_data = None  # dict holding plotted point arrays
@@ -106,6 +106,9 @@ class Tlog2ChartP2App(tk.Tk):
         self._ruler_text = None  # Text/Annotation artist
         self._smith_pth_after = None  # debounce handle
 
+        # ---------------- Annotate tool state (Task D) ----------------
+        self._annot_items = []  # list of annotation artists on Graph canvas
+
         # Build UI
         self._build_top_bar()
         self._build_tabs()
@@ -120,6 +123,16 @@ class Tlog2ChartP2App(tk.Tk):
         # ---------------- Phase 3 state ----------------
         self.p3_results: Optional[Dict[str, Any]] = None
         self.p3_artifacts_dir: Optional[str] = None
+
+        # --- Annotate tool state ---
+        self._annotations = []  # list of matplotlib artists (final annotations)
+
+        self._annot_entry = None  # Tk Entry overlay widget
+        self._annot_artist = None  # matplotlib annotation being edited
+        self._annot_ax = None
+        self._annot_xydata = None  # (xdata, ydata)
+        self._annot_press_xy = None  # (xpix, ypix) for click-vs-drag detection
+        self._annot_click_px_thresh = 4
 
     # -------------------------------------------------------------------------
     # Top Bar (2 rows)
@@ -511,6 +524,15 @@ class Tlog2ChartP2App(tk.Tk):
                     pass
         self._ruler_items = []
 
+        # Remove all annotation items
+        for a in list(getattr(self, "_annot_items", [])):
+            if a is not None:
+                try:
+                    a.remove()
+                except Exception:
+                    pass
+        self._annot_items = []
+
         # Reset drag state
         self._ruler_dragging = False
         self._ruler_ax = None
@@ -720,6 +742,10 @@ class Tlog2ChartP2App(tk.Tk):
                         variable=self.tool_mode_var,
                         command=self._on_tool_mode_changed).pack(side=tk.LEFT, padx=(8, 0))
 
+        ttk.Radiobutton(tool_bar, text="Annotate", value="ANNOTATE",
+                        variable=self.tool_mode_var,
+                        command=self._on_tool_mode_changed).pack(side=tk.LEFT, padx=(8, 0))
+
         ttk.Label(tool_bar, text="  Hover Item:").pack(side=tk.LEFT, padx=(12, 4))
 
         self._arrow_target_cb = ttk.Combobox(
@@ -844,12 +870,26 @@ class Tlog2ChartP2App(tk.Tk):
     def _on_mpl_press(self, event):
         if event.button != 1:
             return
+
+        # --- Zoom zone ALWAYS wins (works in any tool mode) ---
+        if self._event_in_zoom_zone(event):
+            self.zoom_active = True
+            self.zoom_last_y = event.y
+            return
+
+        # -------- Annotate tool (Task D) --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "ANNOTATE":
+            if event.inaxes is None or event.xdata is None or event.ydata is None:
+                return
+            self._annotate_click(event)
+            return
+
         # -------- Ruler v2 (drag) press --------
         if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
-            # Zoom zone always wins
-            if self._event_in_zoom_zone(event):
-                # Let zoom logic handle it (do not start ruler)
+            if event.inaxes is None or event.xdata is None or event.ydata is None:
                 return
+            self._ruler_start_drag(event)
+            return
 
             # Must click inside a plot axes
             if event.inaxes is None or event.xdata is None or event.ydata is None:
@@ -857,23 +897,6 @@ class Tlog2ChartP2App(tk.Tk):
 
             self._ruler_start_drag(event)
             return
-
-        # -------- Ruler tool (Milestone C) --------
-        if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
-            # If user clicks in zoom zone, let zoom logic handle it (Ruler must NOT block zoom)
-            if self._event_in_zoom_zone(event):
-                # allow zoom to start normally below
-                pass
-            else:
-                # must click inside an axes region
-                if event.inaxes is None or event.xdata is None or event.ydata is None:
-                    return
-                self._ruler_click(event)
-                return  # consume click outside zoom zone
-
-        if self._event_in_zoom_zone(event):
-            self.zoom_active = True
-            self.zoom_last_y = event.y
 
     def _on_mpl_release(self, event):
         # -------- Ruler v2 (drag) release --------
@@ -937,6 +960,32 @@ class Tlog2ChartP2App(tk.Tk):
             self._ruler_preview_text.xy = (x1, y1)
             self._ruler_preview_text.set_visible(True)
 
+        self.canvas.draw_idle()
+
+    def _annotate_click(self, event):
+        """Annotate tool: click to place a text label (temporary, multiple supported)."""
+        ax = event.inaxes
+        x = float(event.xdata)
+        y = float(event.ydata)
+
+        # Ask user for text
+        text = simpledialog.askstring("Annotate", "Enter text:")
+        if text is None:
+            return  # user cancelled
+        text = text.strip()
+        if not text:
+            return
+
+        # Create annotation near click point
+        ann = ax.annotate(
+            text,
+            xy=(x, y),
+            xytext=(12, 12),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.9),
+            arrowprops=dict(arrowstyle="->", color="gray", lw=1.0),
+        )
+        self._annot_items.append(ann)
         self.canvas.draw_idle()
 
     def _ruler_finish_drag(self, event):

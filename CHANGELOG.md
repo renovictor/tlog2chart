@@ -6,19 +6,22 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
----
 
+## [1.3.2] – 2026-03-xx
+### Added
+- Annotate tool (click → input text → place label; multiple; Clear Markups supported)
+### Changed
+- Tool routing: zoom zone always wins across all tool modes
+### Fixed
+- Prevent Ruler from falling back to legacy two-click handler (legacy kept but unused)
+---
 ## [1.3.1] – 2026-03-05
 ### Changed
 - Ruler tool upgraded to JMP-style drag workflow (press→drag preview→release finalize)
 - Support multiple ruler lines (temporary markups)
 ### Fixed
 - Hover interactions stabilized across Graph and Smith chart
-
 ---
-
-
-
 \## \[1.2.0] – 2026-03-03
 
 \### Changed
