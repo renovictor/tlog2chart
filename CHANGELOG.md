@@ -6,6 +6,51 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
+## [1.3.4] – 2026-03-02
+### Added
+- Shape tool (Rectangle / Circle) with JMP-style interaction:
+  - Mouse press → start
+  - Drag → live preview (outline + translucent fill)
+  - Release → finalize and keep shape
+- Multiple shapes supported per plot
+- Custom shape color selection
+- Adjustable shape fill transparency (alpha)
+
+### Changed
+- Unified tool interaction model across Ruler / Line / Shape:
+  - Zoom zone always takes priority
+  - Drag state properly finalized on mouse release
+- Clear Markups now removes:
+  - Rulers
+  - Annotations
+  - Lines
+  - Shapes
+
+### Fixed
+- Shape preview no longer updates when mouse moves without button pressed
+- Shapes no longer disappear on mouse release or second click
+- Eliminated ghost-drag behavior caused by incomplete drag state reset
+
+## [1.3.3] – 2026-03-02
+### Added
+- Line tool with JMP-style interaction:
+  - Mouse press → start
+  - Drag → live preview line
+  - Release → finalize and keep line
+- Multiple lines supported per plot
+- Optional Ctrl key constraint for horizontal / vertical lines
+
+### Changed
+- Clear Markups now removes:
+  - Rulers
+  - Annotations
+  - Lines
+- Unified drag interaction model shared across Ruler and Line tools
+
+### Fixed
+- Tool interaction routing stabilized:
+  - Zoom zone always takes priority in all tool modes
+  - Line tool no longer interferes with zoom or hover behavior
 
 ## [1.3.2] – 2026-03-xx
 ### Added
