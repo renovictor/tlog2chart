@@ -9,13 +9,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+from tkinter import ttk, filedialog, messagebox, simpledialog, colorchooser
 
 import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Rectangle, Ellipse
 
 from .params_desc import TYKON_DESC, QUANTUM_DESC, build_param_value_table
 from .plotting_smith import draw_smith_grid, plot_smith_rlxl_hf_lf
@@ -115,6 +115,18 @@ class Tlog2ChartP2App(tk.Tk):
         self._line_ptA = None  # (x0, y0)
         self._line_preview = None  # Line2D preview
         self._line_items = []  # list of finalized Line2D artists (multiple)
+
+        # ---------------- Shape tool state (Task F) ----------------
+        self.shape_kind_var = tk.StringVar(value="Rect")  # "Rect" or "Circle"
+        self.shape_color = "#ff0000"  # default red
+        self.shape_alpha = tk.DoubleVar(value=0.18)  # fill transparency (0.0~0.6 recommended)
+
+        self._shape_dragging = False
+        self._shape_ax = None
+        self._shape_ptA = None  # (x0, y0)
+        self._shape_preview = None  # preview patch (Rectangle/Ellipse)
+        self._shape_items = []  # list of finalized patches (multiple)
+        self._shape_last_xy = None  # (x, y) last valid point during drag
 
         # Build UI
         self._build_top_bar()
@@ -499,6 +511,14 @@ class Tlog2ChartP2App(tk.Tk):
             if hasattr(self, "canvas") and self.canvas is not None:
                 self.canvas.draw_idle()
 
+    def _choose_shape_color(self):
+        """Pick shape edge/fill color."""
+        c = colorchooser.askcolor(title="Pick shape color", initialcolor=self.shape_color)
+        # c = ((r,g,b), "#rrggbb") or (None, None) if cancelled
+        if c is None or c[1] is None:
+            return
+        self.shape_color = c[1]
+
     def _clear_markups(self):
         """Remove temporary markup artists (Ruler/Line/Shape in the future)."""
 
@@ -556,6 +576,28 @@ class Tlog2ChartP2App(tk.Tk):
                 except Exception:
                     pass
         self._line_items = []
+
+        # Remove shape preview
+        if getattr(self, "_shape_preview", None) is not None:
+            try:
+                self._shape_preview.remove()
+            except Exception:
+                pass
+            self._shape_preview = None
+
+        # Remove all finalized shapes
+        for p in list(getattr(self, "_shape_items", [])):
+            if p is not None:
+                try:
+                    p.remove()
+                except Exception:
+                    pass
+        self._shape_items = []
+
+        # Reset shape drag state
+        self._shape_dragging = False
+        self._shape_ax = None
+        self._shape_ptA = None
 
         # Reset line drag state
         self._line_dragging = False
@@ -778,6 +820,31 @@ class Tlog2ChartP2App(tk.Tk):
         ttk.Radiobutton(tool_bar, text="Line", value="LINE",
                         variable=self.tool_mode_var,
                         command=self._on_tool_mode_changed).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Radiobutton(tool_bar, text="Shape", value="SHAPE",
+                        variable=self.tool_mode_var,
+                        command=self._on_tool_mode_changed).pack(side=tk.LEFT, padx=(8, 0))
+
+        ttk.Label(tool_bar, text="  Shape:").pack(side=tk.LEFT, padx=(12, 4))
+        self._shape_kind_cb = ttk.Combobox(
+            tool_bar,
+            textvariable=self.shape_kind_var,
+            values=["Rect", "Circle"],
+            width=7,
+            state="readonly"
+        )
+        self._shape_kind_cb.pack(side=tk.LEFT)
+
+        ttk.Button(tool_bar, text="Shape Color...", command=self._choose_shape_color).pack(side=tk.LEFT, padx=(10, 0))
+
+        ttk.Label(tool_bar, text="Alpha:").pack(side=tk.LEFT, padx=(10, 4))
+        self._shape_alpha_scale = ttk.Scale(
+            tool_bar,
+            from_=0.05, to=0.60,
+            orient="horizontal",
+            variable=self.shape_alpha,
+            length=90
+        )
+        self._shape_alpha_scale.pack(side=tk.LEFT)
 
         ttk.Label(tool_bar, text="  Hover Item:").pack(side=tk.LEFT, padx=(12, 4))
 
@@ -883,9 +950,33 @@ class Tlog2ChartP2App(tk.Tk):
     def _on_mpl_motion(self, event):
         in_zone = self._event_in_zoom_zone(event)
         self.canvas.get_tk_widget().configure(cursor="hand2" if in_zone else "")
-        # -------- Arrow Hover (Milestone B) --------
+
+        # -------- Arrow Hover --------
         if (self.tool_mode_var.get() or "NONE").upper().strip() == "ARROW":
             self._arrow_hover_update(event)
+
+        # -------- Ruler v2 drag preview --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
+            if getattr(self, "_ruler_dragging", False):
+                self._ruler_update_drag(event)
+                return
+
+        # -------- Line tool (Task E) motion --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "LINE":
+            if getattr(self, "_line_dragging", False):
+                self._line_update_drag(event)
+                return
+
+        # -------- Shape tool (Task F) motion --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "SHAPE":
+            if getattr(self, "_shape_dragging", False):
+                buttons = getattr(event, "buttons", None)
+                if buttons is not None and (1 not in buttons):
+                    return
+                self._shape_update_drag(event)
+                return
+
+        # -------- Zoom drag (your existing logic) --------
         if self.zoom_active and self.zoom_last_y is not None and event.y is not None:
             dy = event.y - self.zoom_last_y
             if abs(dy) >= 3:
@@ -893,18 +984,6 @@ class Tlog2ChartP2App(tk.Tk):
                 self._zoom_x(scale)
                 self.zoom_last_y = event.y
                 self.canvas.draw_idle()
-
-        # -------- Ruler v2 (drag) motion --------
-        if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
-            if getattr(self, "_ruler_dragging", False):
-                self._ruler_update_drag(event)
-                return  # consume motion update (avoid interfering with other hover actions)
-
-        # -------- Line tool (Task E) motion --------
-        if (self.tool_mode_var.get() or "NONE").upper().strip() == "LINE":
-            if getattr(self, "_line_dragging", False):
-                self._line_update_drag(event)
-                return
 
     def _on_mpl_press(self, event):
         if event.button != 1:
@@ -930,6 +1009,13 @@ class Tlog2ChartP2App(tk.Tk):
             self._line_start_drag(event)
             return
 
+        # -------- Shape tool (Task F) press --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "SHAPE":
+            if event.inaxes is None or event.xdata is None or event.ydata is None:
+                return
+            self._shape_start_drag(event)
+            return
+
         # -------- Ruler v2 (drag) press --------
         if (self.tool_mode_var.get() or "NONE").upper().strip() == "RULER":
             if event.inaxes is None or event.xdata is None or event.ydata is None:
@@ -945,6 +1031,11 @@ class Tlog2ChartP2App(tk.Tk):
             return
 
     def _on_mpl_release(self, event):
+        # ---- Always end Shape drag if it is active (robust) ----
+        if getattr(self, "_shape_dragging", False) and getattr(self, "_shape_preview", None) is not None:
+            self._shape_finish_drag(event)
+            return
+
         # -------- Line tool (Task E) release --------
         if (self.tool_mode_var.get() or "NONE").upper().strip() == "LINE":
             if getattr(self, "_line_dragging", False):
@@ -981,6 +1072,19 @@ class Tlog2ChartP2App(tk.Tk):
                 bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.9),
                 arrowprops=dict(arrowstyle="->", color="gray", lw=1.0),
             )
+
+        # -------- Shape tool (Task F) release --------
+        # -------- Shape tool (Task F) release --------
+        if (self.tool_mode_var.get() or "NONE").upper().strip() == "SHAPE":
+            # Finalize shape if a preview patch exists (more robust than relying on _shape_dragging flag)
+            if getattr(self, "_shape_preview", None) is not None:
+                self._shape_finish_drag(event)
+                return
+            # Even if preview is missing, stop dragging state to prevent “ghost drag”
+            self._shape_dragging = False
+            self._shape_ax = None
+            self._shape_ptA = None
+            return
 
         self.canvas.draw_idle()
 
@@ -1170,6 +1274,134 @@ class Tlog2ChartP2App(tk.Tk):
         self._line_dragging = False
         self._line_ax = None
         self._line_ptA = None
+
+        self.canvas.draw_idle()
+
+    def _shape_start_drag(self, event):
+        ax = event.inaxes
+        x0 = float(event.xdata)
+        y0 = float(event.ydata)
+
+        self._shape_dragging = True
+        self._shape_ax = ax
+        self._shape_ptA = (x0, y0)
+        self._shape_last_xy = (x0, y0)
+        # tiny initial size so preview is visible immediately on press
+        try:
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+            epsx = abs(xlim[1] - xlim[0]) * 0.002
+            epsy = abs(ylim[1] - ylim[0]) * 0.002
+            eps = min(epsx, epsy)
+            if eps <= 0:
+                eps = 1e-6
+        except Exception:
+            eps = 1e-6
+
+        self._shape_last_xy = (x0, y0)
+
+        # Create preview patch
+        kind = (self.shape_kind_var.get() or "Rect").strip()
+        col = getattr(self, "shape_color", "#ff0000")
+        a = float(self.shape_alpha.get()) if hasattr(self, "shape_alpha") else 0.18
+
+        if self._shape_preview is not None:
+            try:
+                self._shape_preview.remove()
+            except Exception:
+                pass
+            self._shape_preview = None
+
+        if kind == "Circle":
+            # start as a tiny visible circle
+            self._shape_preview = Ellipse((x0, y0), eps, eps,
+                                          edgecolor=col, facecolor=col, alpha=a, linewidth=1.3)
+        else:
+            # start as a tiny visible rectangle
+            self._shape_preview = Rectangle((x0, y0), eps, eps,
+                                            edgecolor=col, facecolor=col, alpha=a, linewidth=1.3)
+
+        ax.add_patch(self._shape_preview)
+        self.canvas.draw_idle()
+
+    def _shape_update_drag(self, event):
+        if self._shape_ax is None or self._shape_ptA is None or self._shape_preview is None:
+            self._shape_dragging = False
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+
+        x0, y0 = self._shape_ptA
+        x1 = float(event.xdata)
+        y1 = float(event.ydata)
+        self._shape_last_xy = (x1, y1)
+
+        kind = (self.shape_kind_var.get() or "Rect").strip()
+
+        # Normalize so (x_min, y_min) is lower-left for Rect
+        x_min = min(x0, x1)
+        y_min = min(y0, y1)
+        w = abs(x1 - x0)
+        h = abs(y1 - y0)
+
+        if kind == "Circle":
+            # Use a true circle: diameter = min(w, h)
+            d = min(w, h)
+            # Center depends on drag direction
+            cx = x0 + (d / 2 if x1 >= x0 else -d / 2)
+            cy = y0 + (d / 2 if y1 >= y0 else -d / 2)
+            self._shape_preview.center = (cx, cy)
+            self._shape_preview.width = d
+            self._shape_preview.height = d
+        else:
+            # Rectangle
+            self._shape_preview.set_xy((x_min, y_min))
+            self._shape_preview.set_width(w)
+            self._shape_preview.set_height(h)
+
+        self.canvas.draw_idle()
+
+    def _shape_finish_drag(self, event):
+        if self._shape_ax is None or self._shape_ptA is None or self._shape_preview is None:
+            self._shape_dragging = False
+            return
+
+        # If release outside axes, finalize using last valid drag point
+        if event.xdata is None or event.ydata is None:
+            if self._shape_last_xy is None:
+                # no valid drag point, cancel
+                try:
+                    self._shape_preview.remove()
+                except Exception:
+                    pass
+                self._shape_preview = None
+                self._shape_dragging = False
+                self._shape_ax = None
+                self._shape_ptA = None
+                self.canvas.draw_idle()
+                return
+            x1, y1 = self._shape_last_xy
+        else:
+            x1 = float(event.xdata)
+            y1 = float(event.ydata)
+
+        # Before finalizing, update the preview geometry one last time
+        # so the final patch matches the intended end point
+        self._shape_last_xy = (x1, y1)
+
+        # Ensure preview geometry reflects final end point
+        fake = type("E", (), {})()
+        fake.xdata, fake.ydata = x1, y1
+        self._shape_update_drag(fake)
+
+        # Finalize: keep the preview patch as a permanent item
+        self._shape_items.append(self._shape_preview)
+
+        # Reset drag state but keep patch
+        self._shape_preview = None
+        self._shape_dragging = False
+        self._shape_ax = None
+        self._shape_ptA = None
 
         self.canvas.draw_idle()
 
