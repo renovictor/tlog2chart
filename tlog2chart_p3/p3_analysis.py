@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from .version import APP_NAME, APP_VERSION
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -721,7 +721,7 @@ def _p3_export_word_report(
     p.add_run(f"Unit FPGA Ver: {unit_fpga}\n")
     p.add_run(f"Unit SN: {unit_sn}\n")
     tool_ver = read_project_version()
-    p.add_run(f"Tool Version: {tool_ver}\n")
+    p.add_run(f"Tool: {APP_NAME} v{APP_VERSION}\n")
     p.add_run(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     doc.add_paragraph("")
 
