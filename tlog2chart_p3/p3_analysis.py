@@ -16,6 +16,29 @@ from .utils import read_project_version
 # =============================================================================
 # -------------------------- Phase 3 Basic Analysis Engine ---------------------
 # =============================================================================
+def _p3_get_graph_time_ms(df: pd.DataFrame) -> np.ndarray:
+    """
+    Return the ms timebase that matches what the Graph tab displays.
+    Priority:
+      1) time(ms) if present (already in ms)
+      2) t(s) * 1000
+      3) time(s) * 1000
+      4) fallback to existing _p3_get_t_ms(df)
+    """
+    if df is None or df.empty:
+        return np.array([], dtype=float)
+
+    if "time(ms)" in df.columns:
+        return pd.to_numeric(df["time(ms)"], errors="coerce").to_numpy(dtype=float)
+
+    if "t(s)" in df.columns:
+        return pd.to_numeric(df["t(s)"], errors="coerce").to_numpy(dtype=float) * 1000.0
+
+    if "time(s)" in df.columns:
+        return pd.to_numeric(df["time(s)"], errors="coerce").to_numpy(dtype=float) * 1000.0
+
+    # fallback (your existing implementation)
+    return _p3_get_t_ms(df)
 
 def _p3_get_t_ms(df: pd.DataFrame) -> np.ndarray:
     """
@@ -349,7 +372,7 @@ def _p3_calc_first6_cycle_metrics_rfuc(
     out = []
     prev_end_t = None
 
-    for i, c in enumerate(cycles_uc[:6], start=1):
+    for i, c in enumerate(cycles_uc, start=1):
         s = int(c["start_idx"])
         e = int(c["end_idx"])
         ts = float(t[s])
@@ -752,10 +775,19 @@ def _p3_export_word_report(
     )
     add_fig(artifacts.get("step2_active", ""), "Figure 2. Active-area power plot (idle removed).")
 
-    doc.add_heading("Step 3 — First 6 RF Cycles", level=1)
+#    doc.add_heading("Step 3 — First 6 RF Cycles", level=1)
+    # Step 3 title (Task G - time range)
+    if settings.get("step3_range_s") is not None:
+        t0, t1 = settings["step3_range_s"]
+        title3 = f"Step 3 — Customize time range analysis ({t0:.1f}–{t1:.1f} s)"
+    else:
+        title3 = "Step 3 — First 6 RF Cycles"
+    doc.add_heading(title3, level=1)
+    add_fig(artifacts.get("step3_first6", ""), "Figure 3. User assigned time range RF cycles.")
+
     metrics = step3_metrics or []
     if metrics:
-        doc.add_paragraph("Step 3 cycle metrics (first 6 RF:UC cycles):")
+        doc.add_paragraph("Step 3 cycle metrics (base on RF on/off signal):")
 
         table = doc.add_table(rows=1, cols=11)
         hdr = table.rows[0].cells
@@ -795,9 +827,8 @@ def _p3_export_word_report(
         # ✅ shrink Step‑3 table font size to 8
         _set_table_font_size(table, 8)
     doc.add_paragraph(
-        f"Detected RF cycles: {len(cycles)}. The plot shows the first 6 cycles using the original time axis."
+        f"Detected RF cycles: {len(cycles)}. The plot shows user assigned time range."
     )
-    add_fig(artifacts.get("step3_first6", ""), "Figure 3. First 6 RF cycles (original time axis).")
 
     # Step 4 table (Tykon only)
     doc.add_heading("Step 4 — Forward Power vs Setpoint (Tykon only)", level=1)
@@ -897,7 +928,8 @@ def p3_run_analysis(
     fmin_khz: float = 0.01,
     fmax_khz: float = 50.0,
     dmin_pct: float = 10.0,
-    dmax_pct: float = 90.0
+    dmax_pct: float = 90.0,
+    step3_range_s: Optional[Tuple[float, float]] = None,
 ) -> Dict[str, Any]:
     """
     Orchestrate Step1-8.
@@ -910,6 +942,27 @@ def p3_run_analysis(
 
     # cycles for Step 3 (RF:UC based)
     cycles_uc = _p3_detect_cycles_from_rfuc(df)
+    # Select cycles for Step 3 metrics
+    selected_cycles_uc = cycles_uc[:6]  # default
+
+    if step3_range_s is not None and len(cycles_uc) > 0:
+        t0_s, t1_s = step3_range_s
+        t_s_all = pd.to_numeric(df["t(s)"], errors="coerce").to_numpy(dtype=float)
+
+        tmp = []
+        for c in cycles_uc:
+            s_idx = int(c["start_idx"])
+            e_idx = int(c["end_idx"])
+            if 0 <= s_idx < len(t_s_all) and 0 <= e_idx < len(t_s_all):
+                cs = float(t_s_all[s_idx])
+                ce = float(t_s_all[e_idx])
+                # overlap rule
+                if (ce >= t0_s) and (cs <= t1_s):
+                    tmp.append(c)
+
+        if tmp:
+            selected_cycles_uc = tmp
+    first6_range = None
 
     # ---------------- Step 1: full ----------------
     png1 = os.path.join(artifacts_dir, "step1_full.png")
@@ -937,35 +990,73 @@ def p3_run_analysis(
         include_pdel=False   # <-- Ste
     )
 
-    # ---------------- Step 3: first 6 RF cycles (RF:UC) ----------------
-    png3 = os.path.join(artifacts_dir, "step3_first6.png")
-    first6_range = None
+    # # ---------------- Step 3: first 6 RF cycles (RF:UC) ----------------
+    # png3 = os.path.join(artifacts_dir, "step3_first6.png")
+    # first6_range = None
+    #
+    # if len(cycles_uc) > 0:
+    #     first = cycles_uc[:6]
+    #     s = int(first[0]["start_idx"])
+    #     e = int(first[-1]["end_idx"])
+    #     first6_range = (s, e)
+    #     _p3_plot_power_png(
+    #         df,
+    #         png3,
+    #         "Step 3: First 6 RF cycles (RF:UC based)",
+    #         idx_range=(s, e),
+    #         dpi=180
+    #     )
+    # else:
+    #     _p3_plot_power_png(
+    #         df,
+    #         png3,
+    #         "Step 3: No RF:UC cycles detected",
+    #         use_active_only=False,
+    #         dpi=180
+    #     )
 
-    if len(cycles_uc) > 0:
-        first = cycles_uc[:6]
-        s = int(first[0]["start_idx"])
-        e = int(first[-1]["end_idx"])
-        first6_range = (s, e)
-        _p3_plot_power_png(
-            df,
-            png3,
-            "Step 3: First 6 RF cycles (RF:UC based)",
-            idx_range=(s, e),
-            dpi=180
-        )
+    # ---------------- Step 3 figure (png3) ----------------
+    png3 = ""
+
+    df_step3 = None
+    title3_plot = "Step 3: First 6 RF cycles"
+
+    # If user provided time-range override (seconds), slice by Graph timebase df['t(s)']
+    if step3_range_s is not None:
+        t0_s, t1_s = step3_range_s
+        title3_plot = f"Step 3: RF cycles (Custom time window: {t0_s:.1f}-{t1_s:.1f} s)"
+
+        if "t(s)" in df.columns:
+            t_s = pd.to_numeric(df["t(s)"], errors="coerce").to_numpy(dtype=float)
+            mask3 = (t_s >= t0_s) & (t_s <= t1_s)
+            df_step3 = df.loc[mask3].copy()
+
     else:
+        # Default behavior (no override): keep whatever you already do for default Step 3
+        # If you have first6_range computed, keep it; otherwise skip default plot for now.
+        if "first6_range" in locals() and first6_range is not None:
+            s, e = first6_range
+            s = max(0, int(s))
+            e = min(int(e), len(df) - 1)
+            if e >= s:
+                df_step3 = df.iloc[s:e + 1].copy()
+
+    # Generate Step 3 figure if there is data
+    if df_step3 is not None and not df_step3.empty:
+        png3 = os.path.join(artifacts_dir, "step3_first6.png")  # keep compatibility key
         _p3_plot_power_png(
-            df,
+            df_step3,
             png3,
-            "Step 3: No RF:UC cycles detected",
+            title=title3_plot,
             use_active_only=False,
-            dpi=180
+            dpi=180,
+            include_pdel=False
         )
 
     # Step 3 metrics (first 6 cycles)
     step3_metrics = _p3_calc_first6_cycle_metrics_rfuc(
         df,
-        cycles_uc=cycles_uc,
+        cycles_uc=selected_cycles_uc,
         unit_type=unit_type,
         settle_ms=settle_ms
     )
@@ -1007,5 +1098,6 @@ def p3_run_analysis(
             "fmax": float(fmax_khz),
             "dmin": float(dmin_pct),
             "dmax": float(dmax_pct),
+            "step3_range_s": step3_range_s,
         }
     }

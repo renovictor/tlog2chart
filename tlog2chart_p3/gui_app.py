@@ -234,11 +234,12 @@ class Tlog2ChartP2App(tk.Tk):
         self.tab_params = ttk.Frame(self.nb)
         self.tab_array = ttk.Frame(self.nb)
         self.tab_smith = ttk.Frame(self.nb)
-
+        self.tab_analysis_input = ttk.Frame(self.nb)
         self.nb.add(self.tab_graph, text="Graph")
         self.nb.add(self.tab_params, text="Parameters")
         self.nb.add(self.tab_array, text="Tlog Array")
         self.nb.add(self.tab_smith, text="Smith Chart")
+        self.nb.add(self.tab_analysis_input, text="Analysis Input")
 
         # Parameters tab
         self.param_tree = ttk.Treeview(
@@ -355,6 +356,126 @@ class Tlog2ChartP2App(tk.Tk):
         # connect hover events ONCE
         self._smith_motion_cid = self.smith_canvas.mpl_connect("motion_notify_event", self._on_smith_motion)
         self._smith_leave_cid = self.smith_canvas.mpl_connect("figure_leave_event", self._on_smith_leave)
+
+        # ---------------- Analysis Input tab (Task G) ----------------
+        ai = ttk.Frame(self.tab_analysis_input, padding=(10, 10))
+        ai.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        ttk.Label(ai, text="Step 3 Time Range (s)", font=("Segoe UI", 10, "bold")).grid(
+            row=0, column=0, columnspan=4, sticky="w", pady=(0, 10)
+        )
+
+        ttk.Label(ai, text="Start (s):").grid(row=1, column=0, sticky="e", padx=(0, 6))
+        self.step3_t0_var = tk.StringVar(value="")
+        ttk.Entry(ai, textvariable=self.step3_t0_var, width=14).grid(row=1, column=1, sticky="w", padx=(0, 14))
+
+        ttk.Label(ai, text="End (s):").grid(row=1, column=2, sticky="e", padx=(0, 6))
+        self.step3_t1_var = tk.StringVar(value="")
+        ttk.Entry(ai, textvariable=self.step3_t1_var, width=14).grid(row=1, column=3, sticky="w")
+
+        ttk.Label(ai, text="Leave blank to use default Step 3 behavior.", foreground="gray").grid(
+            row=2, column=0, columnspan=4, sticky="w", pady=(8, 0)
+        )
+
+        btns = ttk.Frame(ai)
+        btns.grid(row=3, column=0, columnspan=4, sticky="w", pady=(14, 0))
+        ttk.Button(btns, text="Clear", command=lambda: (self.step3_t0_var.set(""), self.step3_t1_var.set(""))).pack(
+            side=tk.LEFT)
+        ttk.Button(btns, text="Preview", command=lambda: messagebox.showinfo(
+            "Step 3 Range",
+            f"Parsed Step 3 range: {self._get_step3_range_s_from_gui()}"
+        )).pack(side=tk.LEFT, padx=(8, 0))
+
+        # Make it look nice
+        for c in range(4):
+            ai.columnconfigure(c, weight=0)
+
+    def _get_graph_time_ms(self, df):
+        """
+        Return the same timebase (ms) that the Graph tab uses for x-axis.
+        Priority order (robust across tlog variants):
+          1) time(ms)  (already ms)
+          2) t(s)      (seconds -> ms)
+          3) time(s)   (seconds -> ms)
+        """
+        import numpy as np
+        import pandas as pd
+
+        if df is None or df.empty:
+            return None
+
+        if "time(ms)" in df.columns:
+            t = pd.to_numeric(df["time(ms)"], errors="coerce").to_numpy(dtype=float)
+            return t
+
+        if "t(s)" in df.columns:
+            t = pd.to_numeric(df["t(s)"], errors="coerce").to_numpy(dtype=float) * 1000.0
+            return t
+
+        if "time(s)" in df.columns:
+            t = pd.to_numeric(df["time(s)"], errors="coerce").to_numpy(dtype=float) * 1000.0
+            return t
+
+        return None
+
+    # def _get_step3_range_s_from_gui(self):
+    def _get_step3_range_s_from_gui(self):
+        """
+        Read Step 3 Start/End from Analysis Input tab (seconds).
+        Returns:
+            None -> blank/invalid/out-of-range (use default analysis)
+            (t0_s, t1_s) -> valid time window in seconds
+        """
+        import numpy as np
+        import pandas as pd
+
+        s0 = (self.step3_t0_var.get() or "").strip()
+        s1 = (self.step3_t1_var.get() or "").strip()
+
+        # blank => default behavior
+        if not s0 or not s1:
+            return None
+
+        # numeric parse
+        try:
+            t0 = float(s0)
+            t1 = float(s1)
+        except Exception:
+            messagebox.showwarning("Analysis Input", "Step 3 Start/End must be numeric (seconds).")
+            return None
+
+        if t1 < t0:
+            messagebox.showwarning("Analysis Input", "Step 3 End (s) must be ≥ Start (s).")
+            return None
+
+        # If df not loaded yet, accept (cannot validate)
+        if not hasattr(self, "df") or self.df is None or self.df.empty:
+            return (t0, t1)
+
+        # Graph timebase is df['t(s)'] (seconds)
+        if "t(s)" not in self.df.columns:
+            # can't validate, but accept
+            return (t0, t1)
+
+        x = pd.to_numeric(self.df["t(s)"], errors="coerce").dropna().to_numpy(dtype=float)
+        if x.size == 0:
+            return (t0, t1)
+
+        xmin = float(np.nanmin(x))
+        xmax = float(np.nanmax(x))
+
+        # hard out-of-range => warn and reject
+        if (t1 < xmin) or (t0 > xmax):
+            messagebox.showwarning(
+                "Analysis Input",
+                f"Out of range.\n"
+                f"Your Step 3 window: {t0:.3f}–{t1:.3f} s\n"
+                f"Graph time span: {xmin:.3f}–{xmax:.3f} s"
+            )
+            return None
+
+        # partially overlapping is allowed (we can clamp later if needed)
+        return (t0, t1)
 
     def _on_array_header_release(self, event):
         """
@@ -879,7 +1000,7 @@ class Tlog2ChartP2App(tk.Tk):
         self.ax_power.set_ylabel("Power (W)")
         self.ax_caps.set_ylabel("Caps (%)")
         self.ax_vbias.set_ylabel("V / Bias")
-        self.ax_vbias.set_xlabel("t(ms)")
+        self.ax_vbias.set_xlabel("t(s)")
 
         for ax in self.axes:
             ax.grid(True, alpha=0.3)
@@ -1634,7 +1755,7 @@ class Tlog2ChartP2App(tk.Tk):
                 arrowprops=dict(arrowstyle="->", color="gray", lw=1.0),
             )
 
-        txt = f"{label}\nrow(): {rownum}\nt(ms): {xv:.3f}\n{label}: {yv:.3f}"
+        txt = f"{label}\nrow(): {rownum}\nt(s): {xv:.3f}\n{label}: {yv:.3f}"
         self._hover_annot.set_text(txt)
         self._hover_annot.xy = (xv, yv)
         self._hover_annot.set_visible(True)
@@ -1797,7 +1918,7 @@ class Tlog2ChartP2App(tk.Tk):
         ttk.Label(win, text="Max").grid(row=1, column=2)
 
         row = 2
-        x_min_e, x_max_e = make_row(row, "X axis: t(ms)", "x_min", "x_max"); row += 1
+        x_min_e, x_max_e = make_row(row, "X axis: t(s)", "x_min", "x_max"); row += 1
         pL_min_e, pL_max_e = make_row(row, "Power Left (Pfwd/Pref/SetPt)", "pL_min", "pL_max"); row += 1
         pR_min_e, pR_max_e = make_row(row, "Power Right (Freq/Duty)", "pR_min", "pR_max"); row += 1
         c_min_e, c_max_e = make_row(row, "Caps (%) (C1/C2)", "c_min", "c_max"); row += 1
@@ -2217,7 +2338,7 @@ class Tlog2ChartP2App(tk.Tk):
         self.ax_power.set_ylabel("Power (W)")
         self.ax_caps.set_ylabel("Caps (%)")
         self.ax_vbias.set_ylabel("Vpp/Vcap")
-        self.ax_vbias.set_xlabel("t(ms)")
+        self.ax_vbias.set_xlabel("t(s)")
 
         if keep_zoom:
             self._init_zoom_zone()
@@ -2243,6 +2364,15 @@ class Tlog2ChartP2App(tk.Tk):
             return
 
         x = pd.to_numeric(df["t(s)"], errors="coerce")
+        # print("[DBG] Graph uses df['t(s)'] x min/max:", float(x.min()), float(x.max()), "len=", int(x.shape[0]),
+        #       flush=True)
+        # cols = ["t(s)", "time(ms)", "time(s)", "time0(s)"]
+        # for c in cols:
+        #     if c in df.columns:
+        #         v = pd.to_numeric(df[c], errors="coerce")
+        #         v = v.dropna()
+        #         if not v.empty:
+        #             print(f"[DBG] {c} min/max:", float(v.min()), float(v.max()), flush=True)
         sel = [k for k, v in self.selected_items.items() if v.get()]
         self._update_arrow_target_choices(sel)
         self._clear_plot_axes(keep_zoom=False)
@@ -2402,6 +2532,35 @@ class Tlog2ChartP2App(tk.Tk):
         except Exception as e:
             messagebox.showerror("Export Error", str(e))
 
+    def _get_step3_range_ms_from_gui(self):
+        """
+        Read Step 3 Start/End (ms) from the Analysis Input tab.
+        Returns:
+            None                    -> user left blank (use default Step 3 behavior)
+            (t0_ms, t1_ms) floats  -> valid time window in milliseconds
+        """
+        s0 = (self.step3_t0_var.get() or "").strip()
+        s1 = (self.step3_t1_var.get() or "").strip()
+
+        # Blank = default behavior
+        if not s0 or not s1:
+            return None
+
+        # Parse numbers
+        try:
+            t0 = float(s0)
+            t1 = float(s1)
+        except Exception:
+            messagebox.showwarning("Analysis Input", "Step 3 Start/End must be numeric (ms).")
+            return None
+
+        # Validate ordering
+        if t1 < t0:
+            messagebox.showwarning("Analysis Input", "Step 3 End (ms) must be ≥ Start (ms).")
+            return None
+
+        return (t0, t1)
+
     def _on_analysis(self):
         if self.df is None or self.df.empty:
             messagebox.showwarning("Analysis", "No tlog loaded.")
@@ -2421,6 +2580,7 @@ class Tlog2ChartP2App(tk.Tk):
 
         def worker():
             try:
+                step3_range_s = self._get_step3_range_s_from_gui()
                 # Defaults per your requirement
                 results = p3_run_analysis(
                     self.df,
@@ -2434,7 +2594,8 @@ class Tlog2ChartP2App(tk.Tk):
                     fmin_khz=0.01,
                     fmax_khz=50.0,
                     dmin_pct=10.0,
-                    dmax_pct=90.0
+                    dmax_pct=90.0,
+                    step3_range_s=step3_range_s
                 )
                 self.after(0, lambda r=results: self._on_analysis_done(r))
             except Exception as e:

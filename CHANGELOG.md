@@ -6,6 +6,18 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
+## [1.3.5] – 2026-03-xx
+### Added
+- New “Analysis Input” tab
+- Step 3 custom time-range analysis (user enters start/end time; report focuses on that window)
+
+### Changed
+- Step 3 report title and narrative updated to reflect custom time-range analysis
+- Step 3 metrics table now analyzes cycles/segments within the user-selected time window (not limited to first 6)
+
+### Fixed
+- Prevent out-of-range Step 3 inputs via GUI validation (warn if outside data range)
+- Align Step 3 analysis timebase with Graph timebase to avoid mismatch between Graph and report
 
 ## [1.3.2] – 2026-03-xx
 ### Added
