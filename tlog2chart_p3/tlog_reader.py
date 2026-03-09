@@ -11,6 +11,35 @@ import pandas as pd
 # =============================================================================
 # ----------------------------- Core Tlog Parsing ------------------------------
 # =============================================================================
+import re
+
+_TIMESTAMP_PREFIX_RE = re.compile(
+    r'^\s*\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?\]\s*'
+)
+
+def _strip_timestamp_prefix(lines):
+    """
+    Remove leading timestamp like:
+    [2025-07-25 02:23:49.875]
+    from each line if present.
+    """
+    out = []
+    for line in lines:
+        new_line = _TIMESTAMP_PREFIX_RE.sub('', line)
+        out.append(new_line)
+    return out
+
+def _canonicalize_header_line(line: str) -> str:
+    """
+    Normalize header line for robust detection.
+    - commas -> space
+    - tabs -> space
+    - collapse multiple spaces
+    - lowercase
+    """
+    s = line.replace(',', ' ').replace('\t', ' ')
+    s = ' '.join(s.split())
+    return s.lower()
 
 def _make_unique_header(cols: List[str]) -> List[str]:
     seen = {}
@@ -42,23 +71,69 @@ def _make_unique_header(cols: List[str]) -> List[str]:
 
     return out
 
+import re
+
+def _tok_norm(s: str) -> str:
+    # keep only letters/numbers so '_ms.' -> 'ms'
+    return re.sub(r'[^a-z0-9]+', '', s.lower())
+
+def _line_has_sec_ms(line: str) -> bool:
+    # allow commas / spaces / tabs etc.
+    tokens = line.replace(',', ' ').replace('\t', ' ').split()
+    has_sec = any(_tok_norm(t) == 'sec' for t in tokens)
+    has_ms  = any(_tok_norm(t) == 'ms'  for t in tokens)
+    return has_sec and has_ms
+
 def _find_all_data_headers(lines: List[str]) -> List[Tuple[int, List[str], int]]:
     """
     Find all occurrences of the data header line and corresponding data_start.
     Returns list of tuples: (header_idx, header_tokens, data_start_idx)
+
+    Task I-06 fix:
+      - Accept both 'sec,_ms.' (single token) and 'sec ms' (two tokens),
+        regardless of comma/space/tab delimiters.
+      - Still requires Pls/Freq/Pfwd so we don't accidentally match data rows.
     """
-    must_have = ["sec,_ms.", "Pls", "Freq"]
+    import re
+
+    def _tok_norm(tok: str) -> str:
+        # normalize token to alnum only, lowercase
+        # examples:
+        #   "sec,_ms." -> "secms"
+        #   "Rf:UC-S"  -> "rfucs"
+        return re.sub(r"[^a-z0-9]+", "", tok.lower())
+
     hits: List[Tuple[int, List[str], int]] = []
 
     for i, ln in enumerate(lines):
         s = ln.strip()
         if not s:
             continue
-        s_norm = s.replace("Rf:", "RF:").replace("rf:", "RF:")
-        if all(k in s_norm for k in must_have) and ("Pfwd" in s_norm) and ("Vcap" in s_norm):
-            header_tokens = s_norm.split()
 
-            # compute data_start similar to your original logic
+        # Normalize common RF token casing to avoid header mismatch later
+        s_norm = s.replace("Rf:", "RF:").replace("rf:", "RF:")
+
+        # Tokenize (do NOT destroy original spacing; split() is fine)
+        raw_tokens = s_norm.split()
+        norm_tokens = [_tok_norm(t) for t in raw_tokens]
+
+        # ---- Header detection rules ----
+        # Time columns can appear as:
+        #   - "sec,_ms."  -> norm "secms"
+        #   - "sec" "ms"  -> norm tokens contain both "sec" and "ms"
+        time_ok = ("secms" in norm_tokens) or ("sec" in norm_tokens and "ms" in norm_tokens)
+
+        # Common header columns (both Tykon and Chronos2.0 have these)
+        # Using normalized tokens makes it delimiter-robust.
+        must_ok = ("pls" in norm_tokens) and ("freq" in norm_tokens)
+
+        # Require at least Pfwd in header to avoid matching non-data text lines
+        pfwd_ok = ("pfwd" in norm_tokens)
+
+        if time_ok and must_ok and pfwd_ok:
+            header_tokens = raw_tokens
+
+            # compute data_start: after dashed separator line if present
             data_start = i + 1
             for j in range(i + 1, min(i + 25, len(lines))):
                 if lines[j].strip().startswith("----------"):
@@ -70,6 +145,16 @@ def _find_all_data_headers(lines: List[str]) -> List[Tuple[int, List[str], int]]
     return hits
 
 def _normalize_header(tokens: List[str]) -> List[str]:
+    # ---- Task I-06: Chronos 2.0 header fix ----
+    # Chronos 2.0 may write the time header as two tokens: "sec  ms"
+    # but data rows use one token like "8,633.20". We normalize to the
+    # canonical single token used everywhere else: "sec,_ms."
+    if len(tokens) >= 2:
+        t0 = tokens[0].strip().lower()
+        t1 = tokens[1].strip().lower()
+        if t0 == "sec" and t1 == "ms":
+            tokens = ["sec,_ms."] + tokens[2:]
+    # ------------------------------------------
     expanded: List[str] = []
     for t in tokens:
         t2 = t.replace("Rf:", "RF:").replace("rf:", "RF:")
@@ -79,15 +164,60 @@ def _normalize_header(tokens: List[str]) -> List[str]:
             expanded.append(t2)
     return _make_unique_header(expanded)
 
+# def _parse_data_rows(lines: List[str], header: List[str], data_start_idx: int, data_end_idx: Optional[int] = None) -> pd.DataFrame:
+#     """
+#     Parse data rows for both:
+#       - Tykon: starts with sec,_ms token
+#       - Quantum: starts with MN PSx sec,_ms token
+#
+#     We identify time token by header index of 'sec,_ms.'.
+#
+#     data_end_idx: if provided, stop parsing before this line index.
+#     """
+#     if "sec,_ms." not in header:
+#         raise ValueError("Header missing 'sec,_ms.'")
+#
+#     time_idx = header.index("sec,_ms.")
+#     time_pat = re.compile(r"^\d+,\d+(\.\d+)?$")
+#
+#     end = data_end_idx if (data_end_idx is not None) else len(lines)
+#
+#     rows = []
+#     for ln in lines[data_start_idx:end]:
+#         s = ln.strip()
+#         if not s:
+#             continue
+#         if s.startswith("//") or s.startswith("----------"):
+#             continue
+#
+#         parts = s.split()
+#         if len(parts) <= time_idx:
+#             continue
+#
+#         if not time_pat.match(parts[time_idx]):
+#             continue
+#
+#         if len(parts) < len(header):
+#             parts = parts + [None] * (len(header) - len(parts))
+#         elif len(parts) > len(header):
+#             extras = parts[len(header) - 1:]
+#             parts = parts[:len(header) - 1] + [" ".join([p for p in extras if p is not None])]
+#
+#         rows.append(parts)
+#
+#     return pd.DataFrame(rows, columns=header)
+
 def _parse_data_rows(lines: List[str], header: List[str], data_start_idx: int, data_end_idx: Optional[int] = None) -> pd.DataFrame:
     """
     Parse data rows for both:
       - Tykon: starts with sec,_ms token
       - Quantum: starts with MN PSx sec,_ms token
+      - Chronos 2.0: sec ms in header but data rows still have time token like 8,633.20
 
     We identify time token by header index of 'sec,_ms.'.
 
-    data_end_idx: if provided, stop parsing before this line index.
+    Fix (Task I): C1c,f and C2c,f sometimes appear as '0, 0' (with a space),
+    which breaks naive split() tokenization. We merge such pairs back into one token.
     """
     if "sec,_ms." not in header:
         raise ValueError("Header missing 'sec,_ms.'")
@@ -95,7 +225,37 @@ def _parse_data_rows(lines: List[str], header: List[str], data_start_idx: int, d
     time_idx = header.index("sec,_ms.")
     time_pat = re.compile(r"^\d+,\d+(\.\d+)?$")
 
+    # Indices for the problematic cap tokens (if present)
+    try:
+        c1_idx = header.index("C1c,f")
+    except ValueError:
+        c1_idx = None
+    try:
+        c2_idx = header.index("C2c,f")
+    except ValueError:
+        c2_idx = None
+
+    num_pat = re.compile(r"^\d+(\.\d+)?$")   # allow int/float
     end = data_end_idx if (data_end_idx is not None) else len(lines)
+
+    def _merge_cap_token(parts: List[str], idx: int) -> List[str]:
+        """
+        If parts[idx] looks like '0,' and parts[idx+1] looks like '0',
+        merge into '0,0' and remove parts[idx+1].
+        """
+        if idx is None:
+            return parts
+        if idx < 0 or idx >= len(parts) - 1:
+            return parts
+
+        a = parts[idx]
+        b = parts[idx + 1]
+
+        # Example: a='0,' b='0' OR a='6,' b='63'
+        if isinstance(a, str) and isinstance(b, str):
+            if a.endswith(",") and num_pat.match(b):
+                parts = parts[:idx] + [a + b] + parts[idx + 2:]
+        return parts
 
     rows = []
     for ln in lines[data_start_idx:end]:
@@ -109,12 +269,27 @@ def _parse_data_rows(lines: List[str], header: List[str], data_start_idx: int, d
         if len(parts) <= time_idx:
             continue
 
+        # must have valid time token at time_idx
         if not time_pat.match(parts[time_idx]):
             continue
 
+        # ---- Task I: fix tokenization for C1c,f and C2c,f ('0, 0' -> '0,0') ----
+        # We may need to merge twice because merging C1 can shift C2 position.
+        if c1_idx is not None:
+            parts = _merge_cap_token(parts, c1_idx)
+        if c2_idx is not None:
+            # if C2 is after C1 and C1 merged, C2 index might shift by -1 if the split happened before C2
+            # safest approach: re-find by name using current header index (header stays constant),
+            # but token list can be shorter; we just attempt merge at c2_idx and also at c2_idx-1.
+            parts = _merge_cap_token(parts, c2_idx)
+            parts = _merge_cap_token(parts, c2_idx - 1)
+        # -----------------------------------------------------------------------
+
+        # Now align to header length safely
         if len(parts) < len(header):
             parts = parts + [None] * (len(header) - len(parts))
         elif len(parts) > len(header):
+            # If still longer, join the tail into the last column (legacy behavior)
             extras = parts[len(header) - 1:]
             parts = parts[:len(header) - 1] + [" ".join([p for p in extras if p is not None])]
 
@@ -343,8 +518,13 @@ def extract_parameter_blocks(lines: List[str]) -> List[Tuple[str, str]]:
     return out
 
 def load_tlog(input_path: str) -> Tuple[pd.DataFrame, Dict[str, str], List[Tuple[str, str]]]:
-    with open(input_path, "r", encoding="utf-8", errors="ignore") as f:
+    # with open(input_path, "r", encoding="utf-8", errors="ignore") as f:
+    #     lines = f.readlines()
+    with open(input_path, 'r', encoding="utf-8", errors='ignore') as f:
         lines = f.readlines()
+
+    # --- Task I-03: strip user-added timestamp prefix ---
+    lines = _strip_timestamp_prefix(lines)
 
     # Use the FIRST header block for unit_info/params (good enough for double-download case)
     unit_info = parse_unit_info_from_header(lines)
@@ -388,31 +568,31 @@ def load_tlog(input_path: str) -> Tuple[pd.DataFrame, Dict[str, str], List[Tuple
 
     df = pd.concat(dfs, ignore_index=True)
 
-    # Clean and derive columns
-    df, st = _clean_like_jsl(df)
-    print(
-        f"[CLEAN] junk:{st.junk_lines_deleted}, "
-        f"Vcap>=1300:{st.vcap_lines_deleted}, "
-        f"Pref>2000:{st.pref_lines_deleted}, "
-        f"SetPt/Pset>4000:{st.setpt_lines_deleted}, "
-        f"Pref>Pfwd:{st.pref_gt_pfwd_deleted}, "
-        f"remain:{st.remain_valid_lines}"
-    )
+    # # Clean and derive columns
+    # df, st = _clean_like_jsl(df)
+    # print(
+    #     f"[CLEAN] junk:{st.junk_lines_deleted}, "
+    #     f"Vcap>=1300:{st.vcap_lines_deleted}, "
+    #     f"Pref>2000:{st.pref_lines_deleted}, "
+    #     f"SetPt/Pset>4000:{st.setpt_lines_deleted}, "
+    #     f"Pref>Pfwd:{st.pref_gt_pfwd_deleted}, "
+    #     f"remain:{st.remain_valid_lines}"
+    # )
 
     def _dbg_peak(col, topn=5):
         if col not in df.columns:
-            print(f"[DBG] {col}: missing")
+#            print(f"[DBG] {col}: missing")
             return
         s = pd.to_numeric(df[col], errors="coerce")
         s = s.dropna()
         if s.empty:
-            print(f"[DBG] {col}: all NaN")
+#            print(f"[DBG] {col}: all NaN")
             return
         top = s.nlargest(topn)
-        print(f"[DBG] {col} top{topn}:")
+#       print(f"[DBG] {col} top{topn}:")
         for idx, val in top.items():
             ttoken = df.loc[idx, "sec,_ms."] if "sec,_ms." in df.columns else ""
-            print(f"   idx={idx} sec,_ms.={ttoken} {col}={val}")
+#            print(f"   idx={idx} sec,_ms.={ttoken} {col}={val}")
 
     _dbg_peak("Pref", topn=5)
     _dbg_peak("SetPt",
@@ -421,10 +601,10 @@ def load_tlog(input_path: str) -> Tuple[pd.DataFrame, Dict[str, str], List[Tuple
     _dbg_peak("Pfwd", topn=5)
     df = _derive_columns(df)
 
-    for c in ["Pfwd", "Pref", "SetPt", "Pset", "Vcap", "HVDC", "DcV", "adc"]:
-        if c in df.columns:
-            s = pd.to_numeric(df[c], errors="coerce")
-            if s.notna().any():
-                print("[MAX]", c, float(s.max()), "at df index", int(s.idxmax()))
+    # for c in ["Pfwd", "Pref", "SetPt", "Pset", "Vcap", "HVDC", "DcV", "adc"]:
+    #     if c in df.columns:
+    #         s = pd.to_numeric(df[c], errors="coerce")
+    #         if s.notna().any():
+    #             print("[MAX]", c, float(s.max()), "at df index", int(s.idxmax()))
 
     return df, unit_info, header_params

@@ -6,6 +6,19 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
+## [1.3.6] – 2026-03-02
+### Fixed
+- Task I: Tykon1213 logs with leading timestamp prefixes now parse correctly (timestamp stripped before header detection).
+- Task I: Chronos 2.0 header detection supports `sec ms` format and normalizes to canonical `sec,_ms.`.
+- Task I: Chronos 2.0 parsing fixed for `C1c,f` and `C2c,f` tokens like `0, 0` (prevents column shift).
+- Task I: Chronos 2.0 Step 3 metrics table restored using RF status column `RF`.
+- Task I: Quantum (Q2013) RF ON/OFF naming differences handled (Step 3 metrics works).
+
+### Improved
+- Custom Scale dialog: “Carry X → Analysis Input” button added to copy X range into Step 3 time window.
+- Analysis: removed unnecessary “Phase 3 analysis started…please wait…” popup.
+- Graph toolbar: “Select items to plot” pull-down made more noticeable (hand cursor + hover emphasis).
+
 ## [1.3.5] – 2026-03-xx
 ### Added
 - New “Analysis Input” tab

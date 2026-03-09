@@ -113,6 +113,41 @@ def _p3_pick_rfuc_column(df: pd.DataFrame) -> str:
             return c
     return ""
 
+def _p3_detect_cycles_from_rf_status(df: pd.DataFrame, rf_col: str = "RF") -> List[Dict[str, float]]:
+    """
+    Detect RF ON/OFF cycles from a status column (Chronos 2.0 uses 'RF'). [1](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/02-Tykon1213-EDCM_EvalWoDepo_RF50ms_10000Cyc%20-%20Copy.txt)
+    Assumes values like Y/N (or ON/OFF).
+    Returns cycles with start_idx/end_idx (row indices).
+    """
+    s = df[rf_col].astype(str).fillna("").str.strip()
+
+    # Treat these as ON
+    on = s.isin(["Y", "1", "ON", "On", "TRUE", "True"])
+
+    cycles: List[Dict[str, float]] = []
+    in_on = False
+    start = None
+
+    for idx, is_on in enumerate(on.to_numpy()):
+        if (not in_on) and is_on:
+            in_on = True
+            start = idx
+        elif in_on and (not is_on):
+            end = idx - 1
+            if start is not None and end >= start:
+                cycles.append({"start_idx": float(start), "end_idx": float(end)})
+            in_on = False
+            start = None
+
+    # file ends while still ON
+    if in_on and start is not None:
+        end = len(df) - 1
+        if end >= start:
+            cycles.append({"start_idx": float(start), "end_idx": float(end)})
+
+    return cycles
+
+
 def _p3_detect_cycles_from_rfuc(df: pd.DataFrame) -> List[Dict[str, float]]:
     """
     Detect RF ON/OFF cycles using RF:UC:
@@ -940,8 +975,36 @@ def p3_run_analysis(
     # cycles for Step 4/5 etc. (Pfwd threshold based)
     cycles = _p3_detect_cycles(df, pfwd_threshold_w=active_thr_w)
 
+    # 1) detect cycles using legacy RFUC (Tykon/Quantum)
+    cycles_uc = []
+    try:
+        cycles_uc = _p3_detect_cycles_from_rfuc(df)
+    except Exception:
+        cycles_uc = []
+
+    # 2) fallback cycles for Chronos 2.0 using RF status column
+    cycles_status = []
+    if (not cycles_uc) and ("RF" in df.columns):
+        cycles_status = _p3_detect_cycles_from_rf_status(df, rf_col="RF")
+
+    # 3) choose which cycles list to use for metrics
+    cycles_for_metrics = cycles_uc if cycles_uc else cycles_status
+
+    # 4) compute step 3 metrics table
+    step3_metrics = _p3_calc_first6_cycle_metrics_rfuc(
+        df,
+        cycles_uc=cycles_for_metrics,
+        unit_type=unit_type,
+        settle_ms=settle_ms
+    )
+
     # cycles for Step 3 (RF:UC based)
     cycles_uc = _p3_detect_cycles_from_rfuc(df)
+    # --- Task I-06: Chronos 2.0 fallback ---
+    # Chronos 2.0 uses RF status column 'RF' for ON/OFF. [1](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/02-Tykon1213-EDCM_EvalWoDepo_RF50ms_10000Cyc%20-%20Copy.txt)
+    cycles_status = []
+    if (not cycles_uc) and ("RF" in df.columns):
+        cycles_status = _p3_detect_cycles_from_rf_status(df, rf_col="RF")
     # Select cycles for Step 3 metrics
     selected_cycles_uc = cycles_uc[:6]  # default
 
@@ -1053,10 +1116,12 @@ def p3_run_analysis(
             include_pdel=False
         )
 
-    # Step 3 metrics (first 6 cycles)
+    # Step 3 metrics
+    cycles_for_metrics = cycles_uc if cycles_uc else cycles_status
+
     step3_metrics = _p3_calc_first6_cycle_metrics_rfuc(
         df,
-        cycles_uc=selected_cycles_uc,
+        cycles_uc=cycles_for_metrics,
         unit_type=unit_type,
         settle_ms=settle_ms
     )

@@ -183,7 +183,33 @@ class Tlog2ChartP2App(tk.Tk):
         self.plot_menu = tk.Menu(self.plot_menu_btn, tearoff=False)
         self.plot_menu_btn["menu"] = self.plot_menu
         self.plot_menu_btn.pack(side=tk.LEFT, padx=(0, 12))
+        # ---- B2: make the pull-down stand out (hover + hand cursor) ----
+        self.plot_menu_btn.configure(cursor="hand2")
 
+        # Save default style so we can restore on mouse leave
+        _default_style = self.plot_menu_btn.cget("style") or "TMenubutton"
+        _hover_style = "PlotPick.Hover.TMenubutton"
+
+        style = ttk.Style()
+        # Create a hover style: slightly different background + stronger padding
+        # (Note: background effects depend on OS theme, but padding/border helps everywhere.)
+        style.configure(_hover_style, padding=(10, 4))
+
+        def _on_plot_pick_enter(_e):
+            try:
+                self.plot_menu_btn.configure(style=_hover_style)
+            except Exception:
+                pass
+
+        def _on_plot_pick_leave(_e):
+            try:
+                self.plot_menu_btn.configure(style=_default_style)
+            except Exception:
+                pass
+
+        self.plot_menu_btn.bind("<Enter>", _on_plot_pick_enter)
+        self.plot_menu_btn.bind("<Leave>", _on_plot_pick_leave)
+        # ---------------------------------------------------------------
         ttk.Label(row1, text="Band Filter").pack(side=tk.LEFT, padx=(0, 6))
         self.band_cb = ttk.Combobox(row1, textvariable=self.band_var,
                                     values=["All", "HF", "LF"], width=6, state="readonly")
@@ -1919,6 +1945,15 @@ class Tlog2ChartP2App(tk.Tk):
 
         row = 2
         x_min_e, x_max_e = make_row(row, "X axis: t(s)", "x_min", "x_max"); row += 1
+
+        # ✅ Carry X-axis range to Analysis Input (Task G)
+        ttk.Button(
+            win,
+            text="Carry X → Analysis Input",
+            command=lambda: self._carry_custom_scale_to_analysis_input(x_min_e, x_max_e)
+        ).grid(row=row, column=0, columnspan=3, sticky="w", padx=10, pady=(6, 6))
+        row += 1
+
         pL_min_e, pL_max_e = make_row(row, "Power Left (Pfwd/Pref/SetPt)", "pL_min", "pL_max"); row += 1
         pR_min_e, pR_max_e = make_row(row, "Power Right (Freq/Duty)", "pR_min", "pR_max"); row += 1
         c_min_e, c_max_e = make_row(row, "Caps (%) (C1/C2)", "c_min", "c_max"); row += 1
@@ -1963,6 +1998,34 @@ class Tlog2ChartP2App(tk.Tk):
         ttk.Button(btn_frame, text="Apply", command=lambda: on_apply(False)).pack(side=tk.LEFT, padx=8)
         ttk.Button(btn_frame, text="Save as Default", command=lambda: on_apply(True)).pack(side=tk.LEFT, padx=8)
         ttk.Button(btn_frame, text="Close", command=win.destroy).pack(side=tk.LEFT, padx=8)
+
+    def _carry_custom_scale_to_analysis_input(self, x_min_entry, x_max_entry):
+        """
+        Copy Custom Scale X-axis min/max to Analysis Input Step 3 Start/End (seconds).
+        """
+        try:
+            x0 = float(x_min_entry.get().strip())
+            x1 = float(x_max_entry.get().strip())
+        except Exception:
+            messagebox.showwarning("Carry to Analysis Input", "X-axis min/max must be numeric.")
+            return
+
+        # Ensure order
+        if x1 < x0:
+            x0, x1 = x1, x0
+
+        # Write to Analysis Input fields (Task G)
+        if hasattr(self, "step3_t0_var") and hasattr(self, "step3_t1_var"):
+            self.step3_t0_var.set(f"{x0:.3f}")
+            self.step3_t1_var.set(f"{x1:.3f}")
+
+            # Optional: auto-switch to Analysis Input tab so user sees it
+            try:
+                self.nb.select(self.tab_analysis_input)
+            except Exception:
+                pass
+        else:
+            messagebox.showwarning("Carry to Analysis Input", "Analysis Input tab is not initialized.")
 
     def _apply_custom_scale(self):
         if self.df is None or self.df.empty:
@@ -2576,7 +2639,8 @@ class Tlog2ChartP2App(tk.Tk):
         self.p3_artifacts_dir = os.path.join(base_dir, "p3_artifacts")
 
         # Show quick status
-        messagebox.showinfo("Analysis", "Phase 3 analysis started. Please wait...")
+        # messagebox.showinfo("Analysis", "Phase 3 analysis started. Please wait...")
+        # self.status_var.set("Phase 3 analysis started…")
 
         def worker():
             try:
