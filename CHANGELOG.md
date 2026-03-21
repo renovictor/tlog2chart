@@ -6,7 +6,29 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
-## [1.3.6] – 2026-03-02
+## [1.3.6] – 2026-03-10
+### Fixed
+- Task I: Improved compatibility across multiple tlog formats (Tykon/Quantum/Chronos 2.x/Triton) including header variations and multi-header segments.
+- Task I: Chronos 2.0 parsing robustness improvements (header/time handling, token alignment) enabling correct Step 3 figure and metrics table generation.
+- UX: Added “Carry X → Analysis Input” from Custom Scale to copy X-axis min/max into Step 3 time window.
+- UX: Removed unnecessary “Phase 3 analysis started…please wait…” popup.
+- UX: Improved visibility of “Select items to plot” pull-down control.
+
+## [1.3.8] - 2026-03-21
+### Added
+- Tetris submenu under Help to launch bundled Tetris game as a separate process; log output is shown in a transient window for diagnostics.
+- Instruction dialog with clearer, professional workflow steps (larger font for readability).
+
+### Changed
+- Bumped application version to 1.3.8
+
+### Fixed
+- Robust Tetris launcher: uses project root as cwd and displays child process stdout/stderr in a log window; falls back to threaded launch if needed.
+
+### Known Issues
+- Unit Type auto-detection for Tykon variants may default to **Tykon1213** even when loading a **Tykon0527 (27.12 MHz)** log. Manual selection of unit type is recommended when parameter descriptions must match the exact Tykon variant. Root cause: multiple unit-type setters exist in GUI logic and the frequency-based discriminator (Match param **127**) is not consistently applied at runtime; param 127 distinguishes **27.120 MHz (Tykon0527)** vs **13.560 MHz (Tykon1213)**. [1](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/07%20Tykon0527%20par%20list.txt)[1](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/07%20Tykon0527%20par%20list.txt)[2](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/07%20Tykon1213%20par%20list.txt)
+
+## [1.3.6] – 2026-03-09
 ### Fixed
 - Task I: Tykon1213 logs with leading timestamp prefixes now parse correctly (timestamp stripped before header detection).
 - Task I: Chronos 2.0 header detection supports `sec ms` format and normalizes to canonical `sec,_ms.`.
@@ -19,7 +41,7 @@ This project follows a project-level versioning scheme.
 - Analysis: removed unnecessary “Phase 3 analysis started…please wait…” popup.
 - Graph toolbar: “Select items to plot” pull-down made more noticeable (hand cursor + hover emphasis).
 
-## [1.3.5] – 2026-03-xx
+## [1.3.5] – 2026-03-08
 ### Added
 - New “Analysis Input” tab
 - Step 3 custom time-range analysis (user enters start/end time; report focuses on that window)
