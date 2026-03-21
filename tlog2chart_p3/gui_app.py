@@ -1,15 +1,25 @@
+# Author: Victor Huang <victor.huang@asm.com>
+# Copyright (c) ASM International
+#
+# tlog2chart_P3: Professional Tlog to Chart tool for ASM RF/Plasma systems
+#
+# If you use or modify this software, please retain this author information.
+#
 from __future__ import annotations
 from .version import APP_NAME, APP_VERSION
 import os
 import threading
 import traceback
+import subprocess
+import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from tlog2chart_p3 import params_desc
 
 import numpy as np
 import pandas as pd
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog, colorchooser
+from tkinter import ttk, filedialog, messagebox, simpledialog, colorchooser, scrolledtext
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -17,7 +27,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle, Ellipse
 
-from .params_desc import TYKON_DESC, QUANTUM_DESC, build_param_value_table
+from . import params_desc
+
 from .plotting_smith import draw_smith_grid, plot_smith_rlxl_hf_lf
 from .tlog_reader import load_tlog
 from .p3_analysis import p3_run_analysis, _p3_export_word_report
@@ -33,7 +44,8 @@ class Tlog2ChartP2App(tk.Tk):
 
         ver = read_project_version()
         self.title(f"{APP_NAME} v{APP_VERSION}")
-        self.geometry("1280x760")
+        # Make window vertically longer so top icons/buttons are more visible
+        self.geometry("1280x900")
 
         self._smith_data = None  # dict holding plotted point arrays
         self._smith_annot = None  # matplotlib annotation for hover tooltip
@@ -153,6 +165,191 @@ class Tlog2ChartP2App(tk.Tk):
         self._annot_press_xy = None  # (xpix, ypix) for click-vs-drag detection
         self._annot_click_px_thresh = 4
 
+        # Create a professional menu bar (File, Edit, Help)
+        menubar = tk.Menu(self)
+
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Open", command=self._on_browse)
+        file_menu.add_command(label="Save", state="disabled")
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        # Edit menu (placeholder, can add more commands)
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        edit_menu.add_command(label="Undo", state="disabled")
+        edit_menu.add_command(label="Redo", state="disabled")
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+
+        # Graph menu (tool modes)
+        graph_menu = tk.Menu(menubar, tearoff=0)
+        graph_menu.add_radiobutton(label="None", variable=self.tool_mode_var, value="NONE",
+                                   command=self._on_tool_mode_changed)
+        graph_menu.add_radiobutton(label="Arrow", variable=self.tool_mode_var, value="ARROW",
+                                   command=self._on_tool_mode_changed)
+        graph_menu.add_radiobutton(label="Ruler", variable=self.tool_mode_var, value="RULER",
+                                   command=self._on_tool_mode_changed)
+        graph_menu.add_radiobutton(label="Annotate", variable=self.tool_mode_var, value="ANNOTATE",
+                                   command=self._on_tool_mode_changed)
+        graph_menu.add_radiobutton(label="Line", variable=self.tool_mode_var, value="LINE",
+                                   command=self._on_tool_mode_changed)
+        graph_menu.add_radiobutton(label="Shape", variable=self.tool_mode_var, value="SHAPE",
+                                   command=self._on_tool_mode_changed)
+        menubar.add_cascade(label="Graph", menu=graph_menu)
+
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Instruction", command=self._on_instruction)
+        # Launch external Tetris game (separate process)
+        help_menu.add_command(label="Tetris", command=self._on_tetris)
+        help_menu.add_command(label="About", command=self._on_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.config(menu=menubar)
+
+    def _on_about(self):
+        tk.messagebox.showinfo(
+            "About",
+            f"{APP_NAME} v{APP_VERSION}\n\n"
+            "A professional Tlog to Chart tool for ASM RF/Plasma systems.\n\n"
+            "Author: Victor Huang <victor.huang@asm.com>\n"
+            "Copyright (C) ASM International\n\n"
+            "For support or inquiries, contact the author."
+        )
+
+    def _on_instruction(self):
+        """
+        Show user instructions in a larger-font, scrollable dialog.
+        """
+        instr = (
+            "Analysis workflow (recommended):\n\n"
+            "1) Open: Load a Tlog file via File → Open.\n"
+            "2) Define time window: In the Graph tab, use Custom Scale to set the precise start and end of the interval you wish to analyze.\n"
+            "3) Transfer selection: Click 'Carry x' to move the selected time range into the Analysis module.\n"
+            "4) Analyze: Execute the Analysis step and review the results; adjust parameters if necessary.\n"
+            "5) Report: When analysis completes, use Export to Word to generate the final report.\n\n"
+            "Guidelines:\n"
+            "- Confirm the selected interval fully contains the events or pulses of interest before running analysis.\n"
+            "- Use Graph tools (Arrow, Ruler, Annotate, Line, Shape) to inspect, measure and annotate features that support your analysis.\n"
+            "- 'Export to Word' is only enabled after a successful Analysis run.\n"
+        )
+
+        # Create a modal Toplevel with larger font and scrollable text
+        win = tk.Toplevel(self)
+        win.title("Instruction")
+        win.transient(self)
+        win.resizable(False, False)
+        try:
+            win.grab_set()
+        except Exception:
+            pass
+
+        # ScrolledText with bigger font for readability
+        st = scrolledtext.ScrolledText(win, wrap=tk.WORD, width=84, height=14,
+                                      font=("Segoe UI", 12))
+        st.insert(tk.END, instr)
+        st.configure(state="disabled")
+        st.grid(row=0, column=0, padx=12, pady=(12, 6))
+
+        btn = ttk.Button(win, text="Close", command=win.destroy)
+        btn.grid(row=1, column=0, pady=(0, 12))
+
+        # Center the dialog over parent
+        self.update_idletasks()
+        pw = self.winfo_width()
+        ph = self.winfo_height()
+        px = self.winfo_rootx()
+        py = self.winfo_rooty()
+        ww = win.winfo_reqwidth()
+        wh = win.winfo_reqheight()
+        try:
+            x = px + max(0, (pw - ww) // 2)
+            y = py + max(0, (ph - wh) // 2)
+            win.geometry(f'+{x}+{y}')
+        except Exception:
+            pass
+
+    def _on_tetris(self):
+        """Launch the bundled Tetris game as a subprocess and show its stdout/stderr.
+
+        We pipe stdout/stderr so that any import errors or runtime exceptions from the
+        child process are visible. If subprocess start fails we fall back to an
+        in-process threaded call.
+        """
+        try:
+            python = sys.executable or 'python'
+            pkg_parent = os.path.dirname(os.path.dirname(__file__))
+
+            # Prefer running the Tetris script file directly (more robust than -m in some envs)
+            script_path = os.path.join(pkg_parent, 'tlog2chart_p3', 'Tetris.py')
+            if os.path.exists(script_path):
+                cmd = [python, script_path]
+            else:
+                cmd = [python, '-m', 'tlog2chart_p3.Tetris']
+
+            # Create a live log window to show child process output
+            log_win = tk.Toplevel(self)
+            log_win.title('Tetris — process output')
+            log_win.geometry('640x360')
+            try:
+                log_win.transient(self)
+                log_win.grab_set()
+            except Exception:
+                pass
+
+            txt = scrolledtext.ScrolledText(log_win, wrap=tk.WORD, state='normal')
+            txt.pack(fill=tk.BOTH, expand=True)
+            txt.insert(tk.END, f"Starting: {cmd}\nCWD: {pkg_parent}\n\n")
+            txt.configure(state='disabled')
+
+            def append_log(line: str):
+                try:
+                    txt.configure(state='normal')
+                    txt.insert(tk.END, line)
+                    txt.see(tk.END)
+                    txt.configure(state='disabled')
+                except Exception:
+                    pass
+
+            def run_subproc():
+                try:
+                    # On Windows, give the child its own console for better visibility
+                    kwargs = dict(cwd=pkg_parent, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    if os.name == 'nt':
+                        try:
+                            kwargs['creationflags'] = subprocess.CREATE_NEW_CONSOLE
+                        except Exception:
+                            pass
+                    proc = subprocess.Popen(cmd, **kwargs)
+                except Exception as e:
+                    self.after(0, lambda: tk.messagebox.showerror('Tetris Launch Failed', f'Could not start subprocess:\n{e}'))
+                    return
+
+                # Read lines and append to text widget
+                try:
+                    assert proc.stdout is not None
+                    for ln in proc.stdout:
+                        self.after(0, lambda s=ln: append_log(s))
+                except Exception as e:
+                    self.after(0, lambda: append_log(f"[logger error reading stdout] {e}\n"))
+                finally:
+                    rc = proc.wait()
+                    self.after(0, lambda: append_log(f"\nProcess exited with code {rc}\n"))
+
+            import threading
+            threading.Thread(target=run_subproc, daemon=True).start()
+
+        except Exception as e:
+            # Fallback: try importing and running in a background thread.
+            try:
+                import threading
+                from . import Tetris
+                t = threading.Thread(target=Tetris.main, daemon=True)
+                t.start()
+            except Exception as e2:
+                tk.messagebox.showerror('Tetris Launch Failed', f'Could not launch Tetris:\n{e}\n{e2}')
+
     # -------------------------------------------------------------------------
     # Top Bar (2 rows)
     # -------------------------------------------------------------------------
@@ -163,13 +360,28 @@ class Tlog2ChartP2App(tk.Tk):
         row1 = ttk.Frame(top)
         row1.pack(side=tk.TOP, fill=tk.X)
 
+        # --- Company Logo (top right) ---
+        try:
+            logo_path = resource_path('asm-logo-small.gif')
+            self.logo_img = tk.PhotoImage(file=logo_path)
+            logo_label = tk.Label(row1, image=self.logo_img)
+            logo_label.pack(side=tk.RIGHT, padx=10, pady=5)
+        except Exception as e:
+            print(f"Logo load failed: {e}")
+
         row2 = ttk.Frame(top)
         row2.pack(side=tk.TOP, fill=tk.X, pady=(4, 0))
 
         # ---------------- Row 1 ----------------
         ttk.Label(row1, text="Unit Type").pack(side=tk.LEFT, padx=(0, 6))
-        self.unit_cb = ttk.Combobox(row1, textvariable=self.unit_type_var,
-                                    values=["Tykon", "Quantum"], width=10, state="readonly")
+        self.unit_cb = ttk.Combobox(
+            row1,
+            textvariable=self.unit_type_var,
+            values=["Tykon0527", "Tykon1213", "Quantum2013", "Triton2060", "Chronos 2.0", "Chronos 2.1"],
+            width=12,
+            state="readonly"
+        )
+
         self.unit_cb.pack(side=tk.LEFT, padx=(0, 12))
         self.unit_cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_parameter_tab())
 
@@ -243,8 +455,9 @@ class Tlog2ChartP2App(tk.Tk):
         ttk.Button(row2, text="Stop", command=self.destroy)\
             .pack(side=tk.LEFT, padx=(0, 8))
 
-        ttk.Button(row2, text="Analysis", command=self._on_analysis) \
-            .pack(side=tk.LEFT, padx=(8, 8))
+        # store button ref so we can enable/disable it during analysis
+        self.btn_analysis = ttk.Button(row2, text="Analysis", command=self._on_analysis)
+        self.btn_analysis.pack(side=tk.LEFT, padx=(8, 8))
 
         self.btn_export_word = ttk.Button(row2, text="Export to Word", command=self._on_export_word, state="disabled")
         self.btn_export_word.pack(side=tk.LEFT, padx=(0, 8))
@@ -1033,10 +1246,13 @@ class Tlog2ChartP2App(tk.Tk):
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
         self.canvas.draw()
+        # Pack canvas at the top, expand to fill available space
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
+        # Pack toolbar at the bottom, fill horizontally
         self.toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
         self.toolbar.update()
+        self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
         # Events (zoom box)
         self.canvas.mpl_connect("motion_notify_event", self._on_mpl_motion)
@@ -1440,8 +1656,6 @@ class Tlog2ChartP2App(tk.Tk):
             epsx = abs(xlim[1] - xlim[0]) * 0.002
             epsy = abs(ylim[1] - ylim[0]) * 0.002
             eps = min(epsx, epsy)
-            if eps <= 0:
-                eps = 1e-6
         except Exception:
             eps = 1e-6
 
@@ -1659,7 +1873,7 @@ class Tlog2ChartP2App(tk.Tk):
                     self._hover_marker.set_visible(False)
                 except Exception:
                     pass
-            self.canvas.draw_idle()
+                self.canvas.draw_idle()
             return
 
         ex, ey = float(event.xdata), float(event.ydata)
@@ -2084,7 +2298,6 @@ class Tlog2ChartP2App(tk.Tk):
         def worker():
             try:
                 df, unit_info, header_params = load_tlog(path)
-
                 # Schedule UI update
                 self.after(0, lambda d=df, u=unit_info, h=header_params: self._on_loaded(d, u, h))
 
@@ -2099,16 +2312,28 @@ class Tlog2ChartP2App(tk.Tk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_loaded(self, df: pd.DataFrame, unit_info: Dict[str, str], header_params: List[Tuple[str, str]]):
-        self.band_var.set("All")
-        self.df = self._apply_band_filter(df)
+        self.df = df
         self.unit_info = unit_info
         self.header_params = header_params
 
+        self._auto_set_unit_type_from_unit_info(unit_info)  # now it can read header_params
+        self.band_var.set("All")
+        self.df = self._apply_band_filter(df)
+
+
+
         ut = (unit_info.get("UnitType", "") or "").lower()
         if "quantum" in ut:
-            self.unit_type_var.set("Quantum")
+            self.unit_type_var.set("Quantum2013")
         elif "tykon" in ut:
-            self.unit_type_var.set("Tykon")
+            # default to 1213 unless we refine by frequency (param 127)
+            self.unit_type_var.set("Tykon1213")
+        elif "triton" in ut:
+            self.unit_type_var.set("Triton2060")
+        elif "chronos" in ut and "2.1" in ut:
+            self.unit_type_var.set("Chronos 2.1")
+        elif "chronos" in ut and "2.0" in ut:
+            self.unit_type_var.set("Chronos 2.0")
 
         if not self.skip_unit_info_var.get():
             self.fw_var.set(unit_info.get("FW", ""))
@@ -2120,6 +2345,7 @@ class Tlog2ChartP2App(tk.Tk):
 
         self._refresh_plot_item_menu()
         self._refresh_parameter_tab()
+
         self._refresh_array_tab(max_rows=2500)
 
         defaults = []
@@ -2211,20 +2437,35 @@ class Tlog2ChartP2App(tk.Tk):
         if cur not in ordered:
             self.arrow_target_var.set(ordered[0])
 
+    # def _refresh_parameter_tab(self):
+    #     for item in self.param_tree.get_children():
+    #         self.param_tree.delete(item)
+    #
+    #     if not self.header_params:
+    #         return
     def _refresh_parameter_tab(self):
+        # Clear existing rows
         for item in self.param_tree.get_children():
             self.param_tree.delete(item)
 
-        if not self.header_params:
+        header_params = getattr(self, "header_params", None)
+        if not header_params:
             return
 
-        param_rows = build_param_value_table(self.header_params)
-        unit = self.unit_type_var.get().strip()
-        desc_map = TYKON_DESC if unit == "Tykon" else QUANTUM_DESC
+        # Build (section, pid, val) rows from parsed header blocks
+        param_rows = params_desc.build_param_value_table(header_params)
+
+        # IMPORTANT: define unit before use
+        unit = (self.unit_type_var.get() or "").strip()
+
+        # Option 2: use embedded maps from params_desc.py
+        desc_map = params_desc.get_desc_map_for_unit(unit)
 
         def find_desc(sec: str, pid: int) -> str:
+            # 1) exact section match
             if sec in desc_map and pid in desc_map[sec]:
                 return desc_map[sec][pid]
+            # 2) fallback by pid across any section (handles section naming differences)
             for sname, inner in desc_map.items():
                 if pid in inner:
                     return inner[pid]
@@ -2233,6 +2474,7 @@ class Tlog2ChartP2App(tk.Tk):
         for sec, pid, val in param_rows:
             d = find_desc(sec, pid)
             self.param_tree.insert("", tk.END, values=(sec, pid, val, d))
+
 
     def _refresh_array_tab(self, max_rows: Optional[int] = None):
         # Pick df to display
@@ -2325,382 +2567,97 @@ class Tlog2ChartP2App(tk.Tk):
             self.btn_array_next.config(state=("normal" if end < total else "disabled"))
 
     # -------------------------------------------------------------------------
-    # Plot update
-    # -------------------------------------------------------------------------
-    def _rebuild_plot_series_cache(self, x_series):
-        """Cache plotted lines for fast Arrow hover (Graph tab)."""
-        self._plot_series_cache = []
-        if self.df is None or self.df.empty:
-            return
-
-        try:
-            x = np.asarray(pd.to_numeric(x_series, errors="coerce"), dtype=float)
-        except Exception:
-            return
-
-        def add_line(ax, line_artist):
-            if line_artist is None or (not line_artist.get_visible()):
-                return
-            label = line_artist.get_label()
-            try:
-                y = np.asarray(line_artist.get_ydata(), dtype=float)
-            except Exception:
-                return
-            if len(y) != len(x):
-                return
-
-            self._plot_series_cache.append({
-                "ax": ax,
-                "label": label,
-                "x": x,
-                "y": y,
-            })
-
-        axes_to_scan = [self.ax_power, self.ax_caps, self.ax_vbias]
-        if getattr(self, "ax_power_right", None) is not None:
-            axes_to_scan.append(self.ax_power_right)
-        if getattr(self, "ax_vbias_right", None) is not None:
-            axes_to_scan.append(self.ax_vbias_right)
-
-        for ax in axes_to_scan:
-            try:
-                for ln in ax.get_lines():
-                    add_line(ax, ln)
-            except Exception:
-                pass
-
-        # Refresh Arrow dropdown list (if you added one)
-        if hasattr(self, "_arrow_target_cb") and hasattr(self, "arrow_target_var"):
-            deny_labels = {"Freq", "Duty", "Pmode"}
-            items = [x for x in sorted({s["label"] for s in self._plot_series_cache}) if x not in deny_labels]
-            if items:
-                self._arrow_target_cb["values"] = items
-                if (self.arrow_target_var.get() or "").strip() not in items:
-                    self.arrow_target_var.set(items[0])
-
-    def _clear_plot_axes(self, keep_zoom: bool = True):
-        # Remove twin axes
-        if self.ax_vbias_right is not None:
-            try:
-                self.fig.delaxes(self.ax_vbias_right)
-            except Exception:
-                pass
-            self.ax_vbias_right = None
-
-        if self.ax_power_right is not None:
-            try:
-                self.fig.delaxes(self.ax_power_right)
-            except Exception:
-                pass
-            self.ax_power_right = None
-
-        for ax in self.axes:
-            ax.clear()
-            ax.grid(True, alpha=0.3)
-
-        self.ax_power.set_ylabel("Power (W)")
-        self.ax_caps.set_ylabel("Caps (%)")
-        self.ax_vbias.set_ylabel("Vpp/Vcap")
-        self.ax_vbias.set_xlabel("t(s)")
-
-        if keep_zoom:
-            self._init_zoom_zone()
-
-    def _update_plot(self):
-        if self.df is None:
-            return
-
-        self._update_plot_menu_text()
-
-        if self.df.empty:
-            self._clear_plot_axes(keep_zoom=True)
-            self.ax_power.text(0.5, 0.5, f"No data after Band Filter = {self.band_var.get()}",
-                               transform=self.ax_power.transAxes, ha="center", va="center", fontsize=12)
-            # Build hover cache for Arrow tool
-            self._rebuild_plot_series_cache(x)
-            self.canvas.draw_idle()
-            return
-
-        df = self.df
-        if "t(s)" not in df.columns:
-            messagebox.showerror("Error", "Missing 't(s)' column.")
-            return
-
-        x = pd.to_numeric(df["t(s)"], errors="coerce")
-        # print("[DBG] Graph uses df['t(s)'] x min/max:", float(x.min()), float(x.max()), "len=", int(x.shape[0]),
-        #       flush=True)
-        # cols = ["t(s)", "time(ms)", "time(s)", "time0(s)"]
-        # for c in cols:
-        #     if c in df.columns:
-        #         v = pd.to_numeric(df[c], errors="coerce")
-        #         v = v.dropna()
-        #         if not v.empty:
-        #             print(f"[DBG] {c} min/max:", float(v.min()), float(v.max()), flush=True)
-        sel = [k for k, v in self.selected_items.items() if v.get()]
-        self._update_arrow_target_choices(sel)
-        self._clear_plot_axes(keep_zoom=False)
-
-        if not sel:
-            self.ax_power.text(0.5, 0.5, "Select items to plot",
-                               transform=self.ax_power.transAxes, ha="center", va="center", fontsize=12)
-            self._init_zoom_zone()
-            self.canvas.draw_idle()
-            return
-
-        # Grouping sets
-        power_left_set = {"Pfwd", "Pref", "SetPt", "Pdel"}
-        power_right_set = {"Freq", "Duty", "Pmode"}         # <-- your request
-        caps_set = {"C1%", "C2%"}
-        vbias_left_set = {"Vpp", "Vcap", "DcV", "HVDC", "Ibias"}
-        vbias_right_set = {"DCBias"}
-
-        def group_of(col: str) -> str:
-            if col in power_right_set:
-                return "power_right"
-            if col in power_left_set:
-                return "power"
-            if col in caps_set:
-                return "caps"
-            if col in vbias_left_set or col in vbias_right_set:
-                return "vbias"
-            # fallback by name
-            c = col.lower()
-            if c in ("freq", "duty"):
-                return "power_right"
-            if "pfwd" in c or "pref" in c or "setpt" in c or "pdel" in c:
-                return "power"
-            if "c1" in c or "c2" in c:
-                return "caps"
-            if "vpp" in c or "vcap" in c or "hvdc" in c or "dcv" in c or "dcbias" in c:
-                return "vbias"
-            return "power"
-
-        # Create twin axes only if needed
-        need_power_right = any(group_of(c) == "power_right" for c in sel)
-        if need_power_right:
-            self.ax_power_right = self.ax_power.twinx()
-            self.ax_power_right.set_ylabel("Freq / Duty / Pmode")
-
-        need_vbias_right = any(c in vbias_right_set for c in sel)
-        if need_vbias_right:
-            self.ax_vbias_right = self.ax_vbias.twinx()
-            self.ax_vbias_right.set_ylabel("DCBias")
-
-        h_power_l, h_power_r, h_caps, h_vl, h_vr = [], [], [], [], []
-
-        for col in sel:
-            if col not in df.columns:
-                continue
-
-            y = pd.to_numeric(df[col], errors="coerce")
-            g = group_of(col)
-
-            if g == "power":
-                ln, = self.ax_power.plot(x, y, linewidth=1.0, label=col)
-                h_power_l.append(ln)
-
-            elif g == "power_right":
-                if self.ax_power_right is None:
-                    self.ax_power_right = self.ax_power.twinx()
-                    self.ax_power_right.set_ylabel("Freq / Duty / Pmode")
-
-                if col == "Pmode":
-                    ln, = self.ax_power_right.step(x, y, where="post",
-                                                   linewidth=1.2, label=col, color="black")
-                else:
-                    ln, = self.ax_power_right.plot(x, y, linewidth=1.0, label=col, linestyle="--")
-
-                h_power_r.append(ln)
-
-            elif g == "caps":
-                ln, = self.ax_caps.plot(x, y, linewidth=1.0, label=col)
-                h_caps.append(ln)
-
-            else:  # vbias
-                if self.ax_vbias_right is not None and col in vbias_right_set:
-                    ln, = self.ax_vbias_right.plot(x, y, linewidth=1.0, label=col, color="tab:red")
-                    h_vr.append(ln)
-                else:
-                    ln, = self.ax_vbias.plot(x, y, linewidth=1.0, label=col)
-                    h_vl.append(ln)
-
-        title = os.path.basename(self.file_path_var.get()) or "tlog"
-        self.ax_power.set_title(title)
-
-        # Legends
-        if h_power_l or h_power_r:
-            handles = h_power_l + h_power_r
-            labels = [h.get_label() for h in handles]
-            self.ax_power.legend(handles, labels, loc="upper left", fontsize=9)
-
-        if h_caps:
-            self.ax_caps.legend(loc="upper left", fontsize=9)
-
-        if h_vl or h_vr:
-            handles = h_vl + h_vr
-            labels = [h.get_label() for h in handles]
-            self.ax_vbias.legend(handles, labels, loc="upper left", fontsize=9)
-
-        self._init_zoom_zone()
-
-        # If custom scale mode, re-apply custom limits after plotting
-        if self.scale_mode == "custom":
-            self._apply_custom_scale()
-        # Build hover cache for Arrow tool (Milestone B)
-        self._rebuild_plot_series_cache(x)
-        self._rebuild_plot_series_cache(x)
-        self.canvas.draw_idle()
-
-    # -------------------------------------------------------------------------
-    # Buttons
+    # Clear button handler for top bar
     # -------------------------------------------------------------------------
     def _on_clear(self):
+        # Deselect all plot items
         for v in self.selected_items.values():
             v.set(False)
         self._update_plot_menu_text()
 
+        # Clear plot axes, keep zoom
         self._clear_plot_axes(keep_zoom=True)
         self.ax_power.text(0.5, 0.5, "Cleared",
                            transform=self.ax_power.transAxes, ha="center", va="center", fontsize=12)
         self.canvas.draw_idle()
 
+        # Reset results and disable export button if present
         self.p3_results = None
         if hasattr(self, "btn_export_word"):
             self.btn_export_word.config(state="disabled")
 
     def _on_export_graph(self):
-        if self.df is None:
-            messagebox.showinfo("Export", "No plot to export yet.")
-            return
-
-        # Build default filename: UnitType + SN + yyyymmdd
-        unit_type = (self.unit_type_var.get() or "Unit").strip().replace(" ", "")
-        sn = (self.sn_var.get() or "SN").strip().replace(" ", "")
-        date_code = __import__("datetime").datetime.now().strftime("%Y%m%d")
-
-        default_name = f"{unit_type}_{sn}_{date_code}.jpg"
-
+        """Export the current graph as an image file (PNG, JPG, etc)."""
+        filetypes = [
+            ("PNG Image", "*.png"),
+            ("JPEG Image", "*.jpg;*.jpeg"),
+            ("All Files", "*.*"),
+        ]
         path = filedialog.asksaveasfilename(
-            title="Export graph",
-            defaultextension=".jpg",
-            initialfile=default_name,
-            filetypes=[("JPG", "*.jpg"), ("PNG", "*.png"), ("All files", "*.*")]
+            defaultextension=".png",
+            filetypes=filetypes,
+            title="Export Graph As Image"
         )
         if not path:
-            return
-
+            return  # User cancelled
         try:
-            self.fig.savefig(path, dpi=200)
-            messagebox.showinfo("Export", f"Saved:\n{path}")
+            self.fig.savefig(path)
+            messagebox.showinfo("Export Graph", f"Graph exported successfully to:\n{path}")
         except Exception as e:
-            messagebox.showerror("Export Error", str(e))
-
-    def _get_step3_range_ms_from_gui(self):
-        """
-        Read Step 3 Start/End (ms) from the Analysis Input tab.
-        Returns:
-            None                    -> user left blank (use default Step 3 behavior)
-            (t0_ms, t1_ms) floats  -> valid time window in milliseconds
-        """
-        s0 = (self.step3_t0_var.get() or "").strip()
-        s1 = (self.step3_t1_var.get() or "").strip()
-
-        # Blank = default behavior
-        if not s0 or not s1:
-            return None
-
-        # Parse numbers
-        try:
-            t0 = float(s0)
-            t1 = float(s1)
-        except Exception:
-            messagebox.showwarning("Analysis Input", "Step 3 Start/End must be numeric (ms).")
-            return None
-
-        # Validate ordering
-        if t1 < t0:
-            messagebox.showwarning("Analysis Input", "Step 3 End (ms) must be ≥ Start (ms).")
-            return None
-
-        return (t0, t1)
+            messagebox.showerror("Export Error", f"Failed to export graph:\n{e}")
 
     def _on_analysis(self):
+        """執行 Phase-3 分析（背景執行）。會呼叫 p3_run_analysis 並將產物輸出到 artifacts 目錄。
+
+        本實作為可用的啟動器：若沒有資料會直接提醒；若有則在背景執行並在完成時顯示提示。
+        """
         if self.df is None or self.df.empty:
-            messagebox.showwarning("Analysis", "No tlog loaded.")
+            messagebox.showwarning("Analysis", "No data loaded to analyze.")
             return
 
-        # Reset previous analysis
-        self.p3_results = None
-        self.btn_export_word.config(state="disabled")
-
-        unit_type = (self.unit_type_var.get() or "").strip()
-        tlog_path = self.file_path_var.get().strip()
-        base_dir = os.path.dirname(tlog_path) if tlog_path else os.getcwd()
-        self.p3_artifacts_dir = os.path.join(base_dir, "p3_artifacts")
-
-        # Show quick status
-        # messagebox.showinfo("Analysis", "Phase 3 analysis started. Please wait...")
-        # self.status_var.set("Phase 3 analysis started…")
+        # Disable analysis button if present to avoid重複執行
+        try:
+            if hasattr(self, 'btn_analysis'):
+                self.btn_analysis.config(state='disabled')
+        except Exception:
+            pass
 
         def worker():
             try:
-                step3_range_s = self._get_step3_range_s_from_gui()
-                # Defaults per your requirement
-                results = p3_run_analysis(
-                    self.df,
-                    unit_type=unit_type,
-                    artifacts_dir=self.p3_artifacts_dir,
-                    active_thr_w=3.0,
-                    tol_pct=2.0,  # adjustable later
-                    settle_ms=6.0,  # adjustable later
-                    pref_ratio=0.01,
-                    mask_ms=3.0,
-                    fmin_khz=0.01,
-                    fmax_khz=50.0,
-                    dmin_pct=10.0,
-                    dmax_pct=90.0,
-                    step3_range_s=step3_range_s
-                )
-                self.after(0, lambda r=results: self._on_analysis_done(r))
+                artifacts_dir = self.p3_artifacts_dir or os.path.join(os.getcwd(), 'p3_artifacts')
+                # Run analysis (long-running) - p3_run_analysis should already be imported
+                results = p3_run_analysis(self.df, (self.unit_type_var.get() or ''), artifacts_dir)
+                # store results and artifacts dir
+                self.p3_results = results
+                self.p3_artifacts_dir = artifacts_dir
+                # enable Export to Word button if present
+                try:
+                    if hasattr(self, 'btn_export_word'):
+                        self.after(0, lambda: self.btn_export_word.config(state='normal'))
+                except Exception:
+                    pass
+                self.after(0, lambda: messagebox.showinfo('Analysis', f'Analysis complete. Artifacts: {artifacts_dir}'))
             except Exception as e:
-                msg = str(e)
-                self.after(0, lambda m=msg: messagebox.showerror("Analysis failed", m))
+                import traceback
+                tb = traceback.format_exc()
+                print('Analysis error:', tb)
+                self.after(0, lambda m=str(e): messagebox.showerror('Analysis Error', m))
+            finally:
+                try:
+                    if hasattr(self, 'btn_analysis'):
+                        self.after(0, lambda: self.btn_analysis.config(state='normal'))
+                except Exception:
+                    pass
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_analysis_done(self, results: Dict[str, Any]):
-        self.p3_results = results
-        self.btn_export_word.config(state="normal")
-
-        s4 = results.get("step4_forward", {})
-        s5 = results.get("step5_reflect", {})
-        pa = results.get("pulse_alarm", {})
-
-        msg = []
-        msg.append(f"Done. Cycles detected: {results.get('cycle_count', 0)}")
-
-        if s4.get("available"):
-            msg.append(f"Step 4 (Pfwd vs setpoint) flagged cycles: {len(s4.get('trouble_cases', []))}")
-            msg.append(f"  Setpoint col: {s4.get('setpoint_col')}")
-        else:
-            msg.append(f"Step 4 skipped: {s4.get('reason', '')}")
-
-        if s5.get("available"):
-            msg.append(f"Step 5 (Pref high) flagged cycles: {len(s5.get('trouble_cases', []))}")
-        else:
-            msg.append(f"Step 5 unavailable: {s5.get('reason', '')}")
-
-        if pa.get("available"):
-            msg.append(f"Pulse mode range alarms: {len(pa.get('alarms', []))}")
-
-        messagebox.showinfo("Analysis Summary", "\n".join(msg))
-
     def _on_export_word(self):
+        # Export Phase-3 Word report using previously computed p3_results
         if not self.p3_results:
             messagebox.showwarning("Export", "Please run Analysis first.")
             return
 
-        tlog_path = self.file_path_var.get().strip()
+        tlog_path = (self.file_path_var.get() or "").strip()
         tlog_filename = os.path.basename(tlog_path) if tlog_path else "tlog"
 
         default_name = f"{(self.unit_type_var.get() or 'Unit').strip()}_{(self.sn_var.get() or 'SN').strip()}_{datetime.now().strftime('%Y%m%d_%H%M')}_P3_Report.docx"
@@ -2725,7 +2682,7 @@ class Tlog2ChartP2App(tk.Tk):
                 step5=r.get("step5_reflect", {}),
                 pulse_alarm=r.get("pulse_alarm", {}),
                 settings=r.get("settings", {}),
-                step3_metrics=r.get("step3_metrics",[]),
+                step3_metrics=r.get("step3_metrics", []),
                 unit_fw=self.fw_var.get(),
                 unit_fpga=self.fpga_var.get(),
                 unit_sn=self.sn_var.get()
@@ -2736,4 +2693,236 @@ class Tlog2ChartP2App(tk.Tk):
             messagebox.showerror("Export failed", str(e))
             return
 
-        messagebox.showinfo("Export", f"Report saved:\n{out_path}")
+    def _clear_plot_axes(self, keep_zoom=False):
+        """Clear all plotting axes and prepare a clean canvas.
+
+        keep_zoom: if True keep the zoom widget state (do not re-create);
+        otherwise re-initialize zoom zone.
+        """
+        # Safely clear main axes
+        try:
+            for ax in getattr(self, "axes", []) or []:
+                try:
+                    ax.clear()
+                except Exception:
+                    pass
+
+            # Reset any twin axes references (they will be re-created when needed)
+            self.ax_power_right = None
+            self.ax_vbias_right = None
+
+            # Small informative text on empty plot
+            if hasattr(self, "ax_power") and self.ax_power is not None:
+                try:
+                    self.ax_power.text(0.5, 0.5, "No data",
+                                        transform=self.ax_power.transAxes,
+                                        ha="center", va="center", fontsize=12)
+                except Exception:
+                    pass
+
+            if not keep_zoom:
+                try:
+                    self._init_zoom_zone()
+                except Exception:
+                    pass
+
+            if hasattr(self, "canvas") and self.canvas is not None:
+                try:
+                    self.canvas.draw_idle()
+                except Exception:
+                    pass
+        except Exception:
+            # Defensive: never let clearing crash the app
+            import traceback
+            print("Error during _clear_plot_axes:\n", traceback.format_exc())
+
+    def _auto_set_unit_type_from_unit_info(self, unit_info):
+        """Set the unit type variable based on unit_info dict."""
+        ut = (unit_info.get("UnitType", "") or "").lower()
+        if "quantum" in ut:
+            self.unit_type_var.set("Quantum2013")
+        elif "tykon" in ut:
+            self.unit_type_var.set("Tykon1213")
+        elif "triton" in ut:
+            self.unit_type_var.set("Triton2060")
+        elif "chronos" in ut and "2.1" in ut:
+            self.unit_type_var.set("Chronos 2.1")
+        elif "chronos" in ut and "2.0" in ut:
+            self.unit_type_var.set("Chronos 2.0")
+        # else leave as is
+
+    def _update_plot(self):
+        try:
+            # Minimal, robust plotting implementation:
+            # - honor self.selected_items for which columns to plot
+            # - choose sensible X axis (t(s) or time(s) if present)
+            # - plot numeric columns onto one of the three axes
+            if self.df is None or self.df.empty:
+                # nothing to plot
+                self._clear_plot_axes()
+                if hasattr(self, 'ax_power'):
+                    try:
+                        self.ax_power.text(0.5, 0.5, "No data to plot",
+                                           transform=self.ax_power.transAxes,
+                                           ha='center', va='center')
+                    except Exception:
+                        pass
+                if hasattr(self, 'canvas'):
+                    try:
+                        self.canvas.draw_idle()
+                    except Exception:
+                        pass
+                return
+
+            df = self.df
+
+            # determine x vector
+            xcol = None
+            for cand in ("t(s)", "time(s)", "time0(s)", "time(ms)", "row()"):
+                if cand in df.columns:
+                    xcol = cand
+                    break
+            if xcol is not None:
+                x = pd.to_numeric(df[xcol], errors='coerce')
+            else:
+                x = pd.RangeIndex(start=0, stop=len(df))
+
+            # clear axes first
+            for ax in getattr(self, 'axes', []) or []:
+                try:
+                    ax.clear()
+                except Exception:
+                    pass
+
+            # Immediately re-apply axis labels/grid so titles don't disappear after clearing
+            try:
+                if hasattr(self, 'ax_power') and self.ax_power is not None:
+                    self.ax_power.set_ylabel("Power (W)")
+                if hasattr(self, 'ax_caps') and self.ax_caps is not None:
+                    self.ax_caps.set_ylabel("Caps (%)")
+                if hasattr(self, 'ax_vbias') and self.ax_vbias is not None:
+                    self.ax_vbias.set_ylabel("V / Bias")
+                    self.ax_vbias.set_xlabel("t(s)")
+                for ax in getattr(self, 'axes', []) or []:
+                    try:
+                        ax.grid(True, alpha=0.3)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # simple mapping heuristics
+            power_labels = {"Pfwd", "Pref", "SetPt", "Pdel", "Pmode"}
+            caps_indicators = {"C1%", "C2%"}
+            vbias_indicators = {"Vpp", "Vcap", "HVDC", "DCBias"}
+
+            # Build plot series cache for hover interaction
+            self._plot_series_cache = []
+
+            plotted_any = False
+            for label, var in list(self.selected_items.items()):
+                try:
+                    if not var.get():
+                        continue
+                except Exception:
+                    # if variable not a tk.BooleanVar, skip
+                    continue
+
+                if label not in df.columns:
+                    continue
+
+                y = pd.to_numeric(df[label], errors='coerce')
+                # skip all-NaN series
+                if y.dropna().empty:
+                    continue
+
+                # Filter known-bad C1%/C2% values (e.g., sentinel 99999 or outside 0-100)
+                if label in {"C1%", "C2%"}:
+                    # treat unrealistic values as NaN
+                    mask_bad = (~np.isfinite(y)) | (y < -1e-6) | (y > 200.0)
+                    if mask_bad.all():
+                        continue
+                    y = y.mask(mask_bad)
+
+                # Filter extreme voltage sensor readings if obviously invalid
+                if label in {"Vpp", "Vcap", "DCBias"}:
+                    mask_bad = (~np.isfinite(y)) | (abs(y) > 1e6)
+                    if mask_bad.all():
+                        continue
+                    y = y.mask(mask_bad)
+
+                # choose axis (ensure ax is defined)
+                ax = None
+                if label in power_labels or label not in caps_indicators.union(vbias_indicators):
+                    ax = self.ax_power
+                elif label in caps_indicators:
+                    ax = self.ax_caps
+                elif label in vbias_indicators:
+                    ax = self.ax_vbias
+
+                # fallback to top axis
+                if ax is None:
+                    ax = self.ax_power
+
+                # Plot
+                try:
+                    lobj, = ax.plot(x, y, label=label)
+                    # save for hover: x,y arrays and axis reference
+                    try:
+                        xv = pd.to_numeric(x, errors='coerce').to_numpy(dtype=float)
+                    except Exception:
+                        xv = np.asarray(x)
+                    yv = pd.to_numeric(y, errors='coerce').to_numpy(dtype=float)
+                    self._plot_series_cache.append({"label": label, "x": xv, "y": yv, "ax": ax, "line": lobj})
+                    plotted_any = True
+                except Exception:
+                    # skip plotting problems for a single series
+                    import traceback
+                    print(f"Plot error for {label}:\n", traceback.format_exc())
+
+            # styling
+            try:
+                for ax in getattr(self, 'axes', []) or []:
+                    ax.grid(True, alpha=0.3)
+                    ax.relim()
+                    ax.autoscale_view()
+            except Exception:
+                pass
+
+            # draw legends on each axis
+            try:
+                if hasattr(self, 'ax_power'):
+                    self.ax_power.legend(loc='upper right', fontsize='small')
+                if hasattr(self, 'ax_caps'):
+                    self.ax_caps.legend(loc='upper right', fontsize='small')
+                if hasattr(self, 'ax_vbias'):
+                    self.ax_vbias.legend(loc='upper right', fontsize='small')
+            except Exception:
+                pass
+
+            # ensure zoom widget present
+            try:
+                self._init_zoom_zone()
+            except Exception:
+                pass
+
+            if hasattr(self, 'canvas'):
+                try:
+                    self.canvas.draw_idle()
+                except Exception:
+                    pass
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"Plot update error: {e}\n{tb}")
+            if hasattr(self, 'ax_power'):
+                try:
+                    self.ax_power.clear()
+                    self.ax_power.text(0.5, 0.5, f"Plot error:\n{e}", transform=self.ax_power.transAxes, ha="center", va="center", color="red")
+                except Exception:
+                    pass
+                if hasattr(self, 'canvas'):
+                    try:
+                        self.canvas.draw_idle()
+                    except Exception:
+                        pass
