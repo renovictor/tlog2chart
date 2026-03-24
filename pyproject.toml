@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tlog2chart"
+version = "0.1.0"
+description = "Plot EVC tlog (MAVLink telemetry log) data as charts"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "pymavlink>=2.4.0",
+    "matplotlib>=3.7.0",
+    "pandas>=2.0.0",
+]
+
+[project.scripts]
+tlog2chart = "tlog2chart.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tlog2chart*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

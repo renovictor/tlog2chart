@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: tlog2chart
+Version: 0.1.0
+Summary: Plot EVC tlog (MAVLink telemetry log) data as charts
+License: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: pymavlink>=2.4.0
+Requires-Dist: matplotlib>=3.7.0
+Requires-Dist: pandas>=2.0.0
+
+# tlog2chart
