@@ -1,2 +1,0 @@
-[console_scripts]
-tlog2chart = tlog2chart.__main__:main
