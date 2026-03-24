@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import datetime as _dt
 
 # =============================================================================
 # ----------------------------- Core Tlog Parsing ------------------------------
@@ -476,6 +477,39 @@ def parse_unit_info_from_header(lines: List[str]) -> Dict[str, str]:
     return info
 
 
+def parse_time_info_from_header(lines: List[str]) -> Dict[str, Optional[str]]:
+    """
+    Best-effort parse of time-related header fields. Returns dict with optional keys:
+      - 'host_time': ISO datetime string if found (e.g. '2026-03-23 20:36:17.552')
+      - 'tlog_start_time': datetime string parsed from 'tlog start time : YYYYMMDD-HHMMSS'
+    """
+    out = {"host_time": None, "tlog_start_time": None}
+    head = "".join(lines[:4000])
+    # host time before tlog : 2026-03-23 20:36:17.552
+    m = re.search(r'host time before tlog\s*:\s*([0-9\- :\.]+)', head, flags=re.IGNORECASE)
+    if m:
+        s = m.group(1).strip()
+        # try parse with ms then without
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+            try:
+                dt = _dt.datetime.strptime(s, fmt)
+                out['host_time'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+                break
+            except Exception:
+                continue
+
+    m2 = re.search(r'tlog start time\s*:\s*(\d{8}-\d{6})', head, flags=re.IGNORECASE)
+    if m2:
+        s2 = m2.group(1).strip()
+        try:
+            dt2 = _dt.datetime.strptime(s2, "%Y%m%d-%H%M%S")
+            out['tlog_start_time'] = dt2.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            out['tlog_start_time'] = None
+
+    return out
+
+
 def extract_parameter_blocks(lines: List[str]) -> List[Tuple[str, str]]:
     out: List[Tuple[str, str]] = []
     current_section = "Header"
@@ -568,43 +602,47 @@ def load_tlog(input_path: str) -> Tuple[pd.DataFrame, Dict[str, str], List[Tuple
 
     df = pd.concat(dfs, ignore_index=True)
 
-    # # Clean and derive columns
-    # df, st = _clean_like_jsl(df)
-    # print(
-    #     f"[CLEAN] junk:{st.junk_lines_deleted}, "
-    #     f"Vcap>=1300:{st.vcap_lines_deleted}, "
-    #     f"Pref>2000:{st.pref_lines_deleted}, "
-    #     f"SetPt/Pset>4000:{st.setpt_lines_deleted}, "
-    #     f"Pref>Pfwd:{st.pref_gt_pfwd_deleted}, "
-    #     f"remain:{st.remain_valid_lines}"
-    # )
-
-    def _dbg_peak(col, topn=5):
-        if col not in df.columns:
-#            print(f"[DBG] {col}: missing")
-            return
-        s = pd.to_numeric(df[col], errors="coerce")
-        s = s.dropna()
-        if s.empty:
-#            print(f"[DBG] {col}: all NaN")
-            return
-        top = s.nlargest(topn)
-#       print(f"[DBG] {col} top{topn}:")
-        for idx, val in top.items():
-            ttoken = df.loc[idx, "sec,_ms."] if "sec,_ms." in df.columns else ""
-#            print(f"   idx={idx} sec,_ms.={ttoken} {col}={val}")
-
-    _dbg_peak("Pref", topn=5)
-    _dbg_peak("SetPt",
-              topn=5)  # IMPORTANT: your log uses SetPt in header [1](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/013-30_53300212_20260225-182102_tlog%20-%202nd%20header.txt)
-    _dbg_peak("Pset", topn=5)  # optional
-    _dbg_peak("Pfwd", topn=5)
     df = _derive_columns(df)
 
-    # for c in ["Pfwd", "Pref", "SetPt", "Pset", "Vcap", "HVDC", "DcV", "adc"]:
-    #     if c in df.columns:
-    #         s = pd.to_numeric(df[c], errors="coerce")
-    #         if s.notna().any():
-    #             print("[MAX]", c, float(s.max()), "at df index", int(s.idxmax()))
+    # --- Time alignment (best-effort, non-destructive) ---
+    try:
+        time_info = parse_time_info_from_header(lines)
+        host_time_str = time_info.get('host_time')
+        tlog_start_time_str = time_info.get('tlog_start_time')
+
+        offset_dt = None
+        # Prefer host_time if available
+        if host_time_str:
+            try:
+                host_dt = _dt.datetime.strptime(host_time_str, '%Y-%m-%d %H:%M:%S')
+                # align host_dt to first observed commented tlog time if present
+                offset_dt = host_dt
+            except Exception:
+                offset_dt = None
+
+        # If we have tlog_start_time but not host_time, use that as date anchor
+        if offset_dt is None and tlog_start_time_str:
+            try:
+                offset_dt = _dt.datetime.strptime(tlog_start_time_str, '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                offset_dt = None
+
+        # If we have an offset anchor and df contains plotting time, compute mapping for chart x-axis.
+        if offset_dt is not None and 't(s)' in df.columns:
+            t_plot = pd.to_numeric(df['t(s)'], errors='coerce').fillna(0).to_numpy()
+            if len(t_plot) > 0:
+                # Align anchor to first plotted point (chart time), not raw EVC uptime time(s).
+                first_t = float(t_plot[0])
+                last_t = float(t_plot[-1])
+                base_dt = offset_dt - _dt.timedelta(seconds=first_t)
+                start_dt = base_dt + _dt.timedelta(seconds=first_t)
+                stop_dt = base_dt + _dt.timedelta(seconds=last_t)
+                unit_info['tlog_time_base_iso'] = base_dt.strftime('%Y-%m-%d %H:%M:%S.%f')
+                unit_info['tlog_time_offset_secs'] = str((base_dt - _dt.datetime(1970, 1, 1)).total_seconds())
+                unit_info['tlog_real_start'] = start_dt.strftime('%Y-%m-%d %H:%M:%S')
+                unit_info['tlog_real_stop'] = stop_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    except Exception:
+        pass  # fail-safe: do nothing
 
     return df, unit_info, header_params

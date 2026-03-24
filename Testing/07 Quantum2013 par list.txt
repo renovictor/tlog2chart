@@ -1,0 +1,160 @@
+>psho
+
+     ********* Parameter list Version = 13 ********
+
+  1:     70 deg  = Maximum Ambient temperature
+  2:   1111      = User Control Input Src. 0-DNet 1-HW  Four 0/1 digits: HF_RF_ON HF_PLS_EN LF_RF_ON LF_PLS_EN.  eg 1010 = HF/LF_RF_ON-HW
+  3:     00      = Misc Options. 0-Disable 1-Enable.  Two 0/1 digits: PULSE_WIDTH_FAULT_ENABLE PULSE_FAULT_ENABLE.
+  4:      0      = FPGA Diagnostic vector select (0..15)
+  6:      1      = 0 - do not monitor PS voltages for fault generation, 1 - monitor PS voltages
+  7:      0      = Default TLog Mode.   0/1/2 = some/all/rf.  'some/all' - continous logging. 'rf' stops logging when tlog is full.
+  8:    0.0 ms   = DeviceNet communication timeout (0 = disable)
+  9:      0      = Disable Devicenet.  0 = DNet Enabled, 1 = DNet Disabled
+ 10:     48      = DeviceNet MAC ID (if 0 -> use switches)
+ 11:      2      = DeviceNet Baud Rate (0,1,2) (125K/250K/500K); only used if param 10 <> 0
+ 13:     64      = Min Sample count (4-100)
+ 14:   5000 RPM  = Fan 1 RPM >= this clears fault
+ 15:   5000 RPM  = Fan 2 RPM >= this clears fault
+ 16:    100 %    = Run Fan 1 at this PWM.  0-100
+ 17:    100 %    = Run Fan 2 at this PWM.  0-100
+ 18:   3000 RPM  = Fan 1 RPM <= this will fault
+ 19:   3000 RPM  = Fan 2 RPM <= this will fault
+ 20:    200 ms   = Fan fault hold time.  fan error has to hold this long before fault asserts.
+ 21:     000     = Ignore Fans.  Three digits # xyz, where x=Fan1, y=Fan2. z=Fan3  000 thru  111
+ 22:      0      = 0 = monitor interlocks, 1 = ignore interlocks
+ 23:      0      = 1 = Rev_A I/F installed, 0 = Rev_A support not required 
+ 24:      2      = cap map : 0 = normal; 1 = Alternate map (1) for HF Sh2 Cap array; 2 = Alternate map of 1/24 for new cap array
+ 25:  20.00 V    = PS Vin Fault Low Limit.  15-35V.  Fault will assert if Vin < this.
+ 26:  27.00 V    = PS Vin Fault High Limit. 15-35V.   Fault will assert if Vin > this.
+ 27:  100.0 V    = DCBias Auto Rng, Low to High Threshold.
+ 28:   98.0 V    = DCBias Auto Rng, High to Low Threshold.
+ 29:   1500 ms   = allow HVDC this much rise time
+ 30:   1320 V    = 100 - 2000V.  HVDC Fault High Limit.  DC_NO_OK Fault Will Assert If HVDC > this
+ 31:     50 deg  = Amb Temp threshold for cumulative log
+ 32:     5       = Vdc Average.  log2 of number of Vdc samples to average (0 - 10 : 1 to 1024 samples)
+ 33:     70 deg  = Hs Temp threshold for cumulative log
+ 35:    1.0 %    = analog cap preset noise threshold (0.0-9.9 %)
+ 36:     90 deg  = Maximum heat Sink  temperature
+ 37:      1      = CW pulsing - see cwpl command
+ 38:      0      = 0/1 = user/factory mode at startup.
+ 39:      3      = number of control loops per millisecond
+ 40:      0      = 0 = start normally, remote mode, 1 = start in Bench mode, local control
+ 41:   5000 RPM  = Fan 3 RPM >= this clears fault
+ 42:    100 %    = Run Fan 3 at this PWM.  0-100
+ 43:   3000 RPM  = Fan 3 RPM <= this will fault
+
+Use 'psho f' to see match-specific parameters
+>//
+>psho f
+
+// HF
+101:     10.0 ms   = CW to Pulse mode transition delay
+102:     20.0 ms   = Pulse to CW mode transition delay
+103:      0.0 ms   = Pulse mode cap preset holding time during RF ramping
+104:   1100.0 V    = Max Vcap voltage raw limit for fast protection
+105:   1000.0 V    = Max Vcap voltage avg limit for fast protection
+106:        0      = Ignore RF On Request.  0 - Use RF On Request Signal.  1 - Don't Use
+107:        1      = delay after reaching match - number of steps of inactivity
+109:        1      = delay after losing match - number of steps of inactivity
+111:      650 V    = Max Vcap for cummulative log
+112:      850 V    = Max Vcap
+113:      650 V    = HVDC less than this -> shut down power supplies
+114:      850 V    = HVDC less than this -> pause matching
+115:      900 V    = HVDC greater than this -> resume matching
+120:      0.0 deg  = Gamma correction angle
+121:     1.00      = |Z| multiplicative correction term
+122:     0.00      = |Z| additive correction term
+123:     1.00      = Phase multiplicative correction term
+124:     0.00      = Phase additive correction term
+125:        1      = Vpp DAC Average.  log2 of number of Vpp samples to average (0 - 10 : 1 to 1024 samples)
+126:      1.0      = Vpp Correction Factor
+127:   12.900 MHz  = Radio Frequency
+132:        2      = 0/1/2 = dual restart limits disable / enable on restart / enable always
+133:       60      = maximum cap movement in fine steps when low_limit < gamma/pref < high_limit
+135:        0      = C1: moves of this many or fewer fine steps are short
+136:        0      = C2: moves of this many or fewer fine steps are short
+137:        2      = C1: if a short move ->  limit to this many fine steps
+138:        0      = C2: if a short move ->  limit to this many fine steps
+139:       12 us   = VIP Sensor settling time
+140:        5 us   = VPP Sensor settling time
+141:        1 us   = RF Delay after Pulse On
+144:     15.0 ms   = time interval within which number of cap toggles is limited
+145:       30      = max number of cap toggles within the above time period
+146:       50 V    = If RF is Off, Vpp has to be greater than this to be reported to AO
+147:       25 us   = cap dead time - Dead time for cap switching
+148:       25 us   = cap switching time
+150:        0      = 0/1 = disable/enable hunting algorithm
+151:        2      = Hunting algorithm selection (1,2,...) - only '2' supported for now
+152:    0.002      = |Gamma| threshold for hunting vs table match
+153:      0.0 ms   = Delay after the first table match
+154:      0.0 ms   = Delay after later table matches
+155:        0      = Alg 1: Initial direction for C2 (0 = up, 1 = down)
+156:        0      = Alg 1: Initial direction for C1 (0 = up, 1 = down)
+157:        0      = Alg 2: Initial direction for C2 (0 = up, 1 = down)
+158:        0      = Alg 2: Initial direction for C1 (0 = up, 1 = down)
+159:    0.020      = Alg 1: target |Zin|
+160:    0.005      = Alg 1: target |Xin|
+161:     0.60 W    = Pfwd < 100 W: Pref stop
+162:     1.40 W    =               Pref restart
+163:     1.80 W    =               Pref high restart (when enabled by p132)
+164:    0.060      = Pfwd 100 - 500 W: Gamma stop
+165:    0.090      =                   Gamma restart
+166:    0.100      =                   Gamma high restart (when enabled by p132)
+167:     3.00 W    = Pfwd > 500 W: Pref stop
+168:     4.00 W    =               Pref restart
+169:     5.00 W    =               Pref high restart (when enabled by p132)
+
+
+// LF
+201:     10.0 ms   = CW to Pulse mode transition delay
+202:     20.0 ms   = Pulse to CW mode transition delay
+203:      0.0 ms   = Pulse mode cap preset holding time during RF ramping
+204:   1100.0 V    = Max Vcap voltage raw limit for fast protection
+205:   1000.0 V    = Max Vcap voltage avg limit for fast protection
+206:        0      = Ignore RF On Request.  0 - Use RF On Request Signal.  1 - Don't Use
+207:        1      = delay after reaching match - number of steps of inactivity
+209:        1      = delay after losing match - number of steps of inactivity
+211:      650 V    = Max Vcap for cummulative log
+212:      850 V    = Max Vcap
+220:      0.0 deg  = Gamma correction angle
+221:     1.00      = |Z| multiplicative correction term
+222:     0.00      = |Z| additive correction term
+223:     1.00      = Phase multiplicative correction term
+224:     0.00      = Phase additive correction term
+225:        1      = Vpp DAC Average.  log2 of number of Vpp samples to average (0 - 10 : 1 to 1024 samples)
+226:      1.0      = Vpp Correction Factor
+227:    0.430 MHz  = Radio Frequency
+232:        2      = 0/1/2 = dual restart limits disable / enable on restart / enable always
+233:       60      = maximum cap movement in fine steps when low_limit < gamma/pref < high_limit
+235:        0      = C3: moves of this many or fewer fine steps are short
+236:        0      = C4: moves of this many or fewer fine steps are short
+237:        2      = C3: if a short move ->  limit to this many fine steps
+238:        0      = C4: if a short move ->  limit to this many fine steps
+239:       25 us   = VIP Sensor settling time
+240:       25 us   = VPP Sensor settling time
+241:       65 us   = RF Delay after Pulse On
+244:     15.0 ms   = time interval within which number of cap toggles is limited
+245:       30      = max number of cap toggles within the above time period
+246:        0 V    = If RF is Off, Vpp has to be greater than this to be reported to AO
+247:      112 us   = cap dead time - Dead time for cap switching
+248:      125 us   = cap switching time
+250:        0      = 0/1 = disable/enable hunting algorithm
+251:        2      = Hunting algorithm selection (1,2,...) - only '2' supported for now
+252:    0.002      = |Gamma| threshold for hunting vs table match
+253:      0.0 ms   = Delay after the first table match
+254:      0.0 ms   = Delay after later table matches
+255:        0      = Alg 1: Initial direction for C4 (0 = up, 1 = down)
+256:        0      = Alg 1: Initial direction for C3 (0 = up, 1 = down)
+257:        0      = Alg 2: Initial direction for C4 (0 = up, 1 = down)
+258:        0      = Alg 2: Initial direction for C3 (0 = up, 1 = down)
+259:    0.020      = Alg 1: target |Zin|
+260:    0.005      = Alg 1: target |Xin|
+261:     0.60 W    = Pfwd < 100 W: Pref stop
+262:     1.40 W    =               Pref restart
+263:     1.80 W    =               Pref high restart (when enabled by p132)
+264:    0.060      = Pfwd 100 - 500 W: Gamma stop
+265:    0.090      =                   Gamma restart
+266:    0.100      =                   Gamma high restart (when enabled by p132)
+267:     3.00 W    = Pfwd > 500 W: Pref stop
+268:     4.00 W    =               Pref restart
+269:     5.00 W    =               Pref high restart (when enabled by p132)

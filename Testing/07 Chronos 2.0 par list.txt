@@ -1,0 +1,89 @@
+00:25:07>psho
+
+     ********* Parameter list Version = 3 ********
+
+  1:     70 deg  = Maximum ambient temperature
+  2:    120 deg  = Maximum heat sink temperature
+  6:      1      = 0 - do not monitor PS voltages for fault generation, 1 - monitor PS voltages
+  7:      2      = Default TLog Mode.   0/1/2 = some/all/rf.  'some/all' - continous logging. 'rf' stops logging when tlog is full.
+ 11:   5000 RPM  = Fan 1 RPM >= this clears fault
+ 12:   5000 RPM  = Fan 2 RPM >= this clears fault
+ 13:   5000 RPM  = Fan 3 RPM >= this clears fault
+ 14:    100 %    = Run Fan 1 at this PWM.  0-100
+ 15:    100 %    = Run Fan 2 at this PWM.  0-100
+ 16:    100 %    = Run Fan 3 at this PWM.  0-100
+ 17:   1000 RPM  = Fan 1 RPM <= this will fault
+ 18:   1000 RPM  = Fan 2 RPM <= this will fault
+ 19:   1000 RPM  = Fan 3 RPM <= this will fault
+ 20:    200 ms   = Fan fault hold time.  fan error has to hold this long before fault asserts.
+ 21:    111      = Ignore Fans.  Three digits # xyz, where x=Fan1, y=Fan2, z=Fan3  0-Monitor,1-Ignore
+ 22:      0      = 0 = monitor interlocks, 1 = ignore interlocks
+ 25:  22.00 V    = PS Vin Fault Low Limit.  15-35V.  Fault will assert if Vin < this.
+ 26:  27.00 V    = PS Vin Fault High Limit. 15-35V.   Fault will assert if Vin > this.
+ 28:   1320 V    = 100 - 2000V.  HVDC Fault High Limit.  DC_NO_OK Fault Will Assert If HVDC > this
+ 29:   3000 ms   = allow HVDC this much rise time
+ 30:     50 V    = If RF is Off, Vpp has to be greater than this to be reported
+ 31:     50 deg  = amb Temp threshold for cummulative log
+ 33:     50.0 us = pulse transient (settling) time (5 .. 1600)
+ 34:     70 deg  = hs Temp threshold for cummulative log
+ 35:   1.0  %    = analog cap preset noise threshold (0.0-9.9 %)
+ 37:      0      = 1 = show calculated Vpp in tlog, 0 = don't
+ 38:      1      = 0/1 = user/factory mode at startup, ** not preserved with 'plst'
+ 39:      5      = number of control loops per millisecond
+ 40:      0      = 0 = start normally, remote mode, 1 = start in Bench mode, local control
+
+Use 'psho f' to see match-specific parameters
+00:25:08>//
+00:25:08>psho f1
+104:   1200.0   V  = Max Vcap voltage raw limit for fast protection
+105:   1200.0   V  = Max Vcap voltage avg limit for fast protection
+106:        0      = 0/1 = disable/enable delay after reaching match
+107:        7      = the match delay in number of control loop runs
+108:        1      = 0/1 = disable/enable delay after losing match
+109:        1      = the unmatch delay in number of control loop runs
+110:        0      = 0/1 = disable/enable elimination of clock beat disturbances (a.k.a 12-second disturbances)
+111:      650      = Max Vcap for cummulative log
+112:      850      = Max Vcap
+113:      750      = HVDC less than this -> shut down power supplies
+114:      800      = HVDC less than this -> pause matching
+115:      850      = HVDC greater than this -> resume matching
+120:      0.0 deg  = Gamma correction angle
+121:     1.00      = |Z| multiplicative correction term
+122:     0.00      = |Z| additive correction term
+123:     1.00      = Phase multiplicative correction term
+124:     0.00      = Phase additive correction term
+125:        2      = cap map: 0 = normal; 2 = Alternate map of 1/24 for new cap array
+126:      1.0      = Vpp Correction Factor
+127:     0.40 MHz  = Radio Frequency
+131:     2500 V    = Maximum Vpp
+132:     2500 V    = Maximum Vpp Scale Value
+134:        0      = log2 of number of V,I,P averaging points, 0.1,...,10 (-> 1,2,4,...,1024 pts)
+135:        0      = cap moves of less than this many fine steps are short
+136:        0      = if both caps' moves are short ->  limit them to this many fine steps
+137:        2      = 0/1/2 = dual gamma disable / enable on restart / enable always
+138:    0.100      = high restart gamma (low restart gamma is in the program)
+139:        3      = maximum cap movement in fine steps when low_gamma < gamma < high_gamma
+140:        0      = 0/1 = disable/enable PIN switching limit
+141:        2      = max number of PIN diodes switching simultaneously
+142:        0      = 0 = count coarse only, 1 = count coarse and fine
+143:        0      = 0 = C2 has priority for movement, 1 = move both caps equaly
+144:     15.0 ms   = time interval within which number of cap toggles is limited
+145:       30      = max number of cap toggles within the above time period
+147:      112 us   = cap dead time - Dead time for cap switching
+148:      125 us   = cap switching time
+150:        0      = 0/1 = disable/enable hunting algorithm
+151:        2      = Hunting algorithm selection (1,2,...) - only '2' supported for now
+152:    0.002      = |Gamma| threshold for hunting vs table match
+153:     10.0 ms   = Delay after the first table match
+154:     10.0 ms   = Delay after later table matches
+155:        0      = Alg 1: Initial direction for C2 (0 = up, 1 = down)
+156:        0      = Alg 1: Initial direction for C1 (0 = up, 1 = down)
+157:        0      = Alg 2: Initial direction for C2 (0 = up, 1 = down)
+158:        0      = Alg 2: Initial direction for C1 (0 = up, 1 = down)
+159:    0.020      = Alg 1: target |Zin|
+160:    0.005      = Alg 1: target |Xin|
+161:        0      = 0/1 = disable/enable variable matching limits
+162:     0.08 W    = stop Pr at Pf = 5 W
+163:     1.00 W    = stop Pr at Pf = 500 W
+164:     0.10 W    = restart Pr at Pf = 5 W
+165:     2.00 W    = restart Pr at Pf = 500 W

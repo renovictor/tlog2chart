@@ -12,7 +12,7 @@ import threading
 import traceback
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from tlog2chart_p3 import params_desc
 
@@ -209,14 +209,113 @@ class Tlog2ChartP2App(tk.Tk):
         self.config(menu=menubar)
 
     def _on_about(self):
-        tk.messagebox.showinfo(
-            "About",
-            f"{APP_NAME} v{APP_VERSION}\n\n"
-            "A professional Tlog to Chart tool for ASM RF/Plasma systems.\n\n"
-            "Author: Victor Huang <victor.huang@asm.com>\n"
-            "Copyright (C) ASM International\n\n"
-            "For support or inquiries, contact the author."
+        # Create a modal About dialog with logo and structured info (matches provided design)
+        win = tk.Toplevel(self)
+        win.title(f"About — {APP_NAME}")
+        win.resizable(False, False)
+        try:
+            win.transient(self)
+            win.grab_set()
+        except Exception:
+            pass
+
+        # Outer frame
+        frm = ttk.Frame(win, padding=(18, 12))
+        frm.pack(fill=tk.BOTH, expand=True)
+
+        # Logo (try common names used in project)
+        logo_img = None
+        for candidate in ('asm-logo-small.gif', 'ASM-logo-small.gif', 'company_logo.png'):
+            try:
+                path = resource_path(candidate)
+                # prefer PhotoImage for gif/png; if png fails, ignore and continue
+                logo_img = tk.PhotoImage(file=path)
+                break
+            except Exception:
+                logo_img = None
+                continue
+
+        if logo_img is not None:
+            lbl_logo = tk.Label(frm, image=logo_img)
+            lbl_logo.image = logo_img  # keep reference
+            lbl_logo.pack(side=tk.TOP, pady=(2, 8))
+
+        # Title
+        title_lbl = ttk.Label(frm, text=APP_NAME.replace('_', ' '), font=(None, 14, 'bold'))
+        title_lbl.pack(side=tk.TOP)
+
+        # Version and release date (try to read project release date if available)
+        ver_text = f"Version {APP_VERSION}"
+        try:
+            # read_project_version may return only version; include if different
+            proj_ver = read_project_version()
+            if proj_ver and proj_ver != APP_VERSION:
+                ver_text = f"Version {APP_VERSION} | Released {proj_ver}"
+        except Exception:
+            pass
+
+        ver_lbl = ttk.Label(frm, text=ver_text, font=(None, 10))
+        ver_lbl.pack(side=tk.TOP, pady=(4, 8))
+
+        # Separator
+        ttk.Separator(frm, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(2, 10))
+
+        # Info grid
+        info_frm = ttk.Frame(frm)
+        info_frm.pack(fill=tk.X, pady=(0, 8))
+
+        def info_row(label, value):
+            l = ttk.Label(info_frm, text=label, width=12, anchor=tk.W)
+            l.grid(row=info_row.row, column=0, sticky=tk.W, padx=(0, 6), pady=2)
+            v = ttk.Label(info_frm, text=value, anchor=tk.W)
+            v.grid(row=info_row.row, column=1, sticky=tk.W, pady=2)
+            info_row.row += 1
+
+        info_row.row = 0
+        info_row('Author:', 'V. Huang')
+        info_row('Department:', 'RF Systems Engineering')
+        info_row('Company:', 'ASM')
+        info_row('Contact:', 'victor.huang@asm.com')
+
+        # Separator
+        ttk.Separator(frm, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(8, 10))
+
+        # Description paragraph
+        desc = (
+            "tlog2chart_P3 is a professional tool for parsing, visualizing and "
+            "analyzing .tlog files produced by EVC matching network. The application "
+            "provides multi-channel time-series plotting, interactive graph tools "
+            "(Arrow, Ruler, Annotate, Line, Shape), custom scaling and zoom, "
+            "automated analysis routines that extract metrics such as Vpp, Vcap, "
+            "power and capacitance, and a report export workflow (Export to Word). "
+            "It is designed to help engineers inspect waveform behaviour, measure "
+            "events precisely, and produce reproducible analysis reports."
         )
+        desc_lbl = ttk.Label(frm, text=desc, wraplength=520, justify=tk.CENTER)
+        desc_lbl.pack(side=tk.TOP, pady=(0, 12))
+
+        # Footer
+        ttk.Separator(frm, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(4, 8))
+        footer = ttk.Label(frm, text=f"© {datetime.now().year} ASM — All rights reserved.", font=(None, 9))
+        footer.pack(side=tk.TOP, pady=(0, 10))
+
+        btn = ttk.Button(frm, text="Close", command=win.destroy)
+        btn.pack(side=tk.BOTTOM, pady=(0, 2))
+
+        # Center the dialog
+        self.update_idletasks()
+        try:
+            pw = self.winfo_width()
+            ph = self.winfo_height()
+            px = self.winfo_rootx()
+            py = self.winfo_rooty()
+            ww = win.winfo_reqwidth()
+            wh = win.winfo_reqheight()
+            x = px + max(0, (pw - ww) // 2)
+            y = py + max(0, (ph - wh) // 2)
+            win.geometry(f'+{x}+{y}')
+        except Exception:
+            pass
 
     def _on_instruction(self):
         """
@@ -283,59 +382,50 @@ class Tlog2ChartP2App(tk.Tk):
 
             # Prefer running the Tetris script file directly (more robust than -m in some envs)
             script_path = os.path.join(pkg_parent, 'tlog2chart_p3', 'Tetris.py')
-            if os.path.exists(script_path):
-                cmd = [python, script_path]
+            if getattr(sys, 'frozen', False):
+                # If running as a bundled exe, start the same executable with a
+                # special flag so the child process runs only the Tetris routine.
+                cmd = [sys.executable, '--run-tetris']
             else:
-                cmd = [python, '-m', 'tlog2chart_p3.Tetris']
+                if os.path.exists(script_path):
+                    cmd = [python, script_path]
+                else:
+                    cmd = [python, '-m', 'tlog2chart_p3.Tetris']
 
-            # Create a live log window to show child process output
-            log_win = tk.Toplevel(self)
-            log_win.title('Tetris — process output')
-            log_win.geometry('640x360')
-            try:
-                log_win.transient(self)
-                log_win.grab_set()
-            except Exception:
-                pass
-
-            txt = scrolledtext.ScrolledText(log_win, wrap=tk.WORD, state='normal')
-            txt.pack(fill=tk.BOTH, expand=True)
-            txt.insert(tk.END, f"Starting: {cmd}\nCWD: {pkg_parent}\n\n")
-            txt.configure(state='disabled')
-
-            def append_log(line: str):
-                try:
-                    txt.configure(state='normal')
-                    txt.insert(tk.END, line)
-                    txt.see(tk.END)
-                    txt.configure(state='disabled')
-                except Exception:
-                    pass
-
+            # Launch the child process without creating an in-GUI log window.
+            # On Windows, create a new console so the pygame window and its console output
+            # are visible separately; do not pipe stdout/stderr (avoid hanging read loops).
             def run_subproc():
                 try:
-                    # On Windows, give the child its own console for better visibility
-                    kwargs = dict(cwd=pkg_parent, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                    kwargs = dict(cwd=pkg_parent)
+                    # On Windows prefer pythonw (no console). If running as a frozen exe,
+                    # attempt to start child without creating a new console window.
                     if os.name == 'nt':
+                        # Prefer to suppress the child console window on Windows
                         try:
-                            kwargs['creationflags'] = subprocess.CREATE_NEW_CONSOLE
+                            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
                         except Exception:
                             pass
+                        # If not frozen and pythonw exists, prefer using pythonw to be safe
+                        if not getattr(sys, 'frozen', False):
+                            try:
+                                py_exec = cmd[0] if cmd else (sys.executable or 'python')
+                                py_dir = os.path.dirname(py_exec)
+                                pyw = os.path.join(py_dir, 'pythonw.exe')
+                                if os.path.exists(pyw):
+                                    new_cmd = list(cmd)
+                                    new_cmd[0] = pyw
+                                    proc = subprocess.Popen(new_cmd, **kwargs)
+                                    return
+                            except Exception:
+                                pass
+                    # Default: start subprocess without piping stdout/stderr
                     proc = subprocess.Popen(cmd, **kwargs)
                 except Exception as e:
-                    self.after(0, lambda: tk.messagebox.showerror('Tetris Launch Failed', f'Could not start subprocess:\n{e}'))
-                    return
-
-                # Read lines and append to text widget
-                try:
-                    assert proc.stdout is not None
-                    for ln in proc.stdout:
-                        self.after(0, lambda s=ln: append_log(s))
-                except Exception as e:
-                    self.after(0, lambda: append_log(f"[logger error reading stdout] {e}\n"))
-                finally:
-                    rc = proc.wait()
-                    self.after(0, lambda: append_log(f"\nProcess exited with code {rc}\n"))
+                    try:
+                        tk.messagebox.showerror('Tetris Launch Failed', f'Could not start subprocess:\n{e}')
+                    except Exception:
+                        pass
 
             import threading
             threading.Thread(target=run_subproc, daemon=True).start()
@@ -1229,6 +1319,8 @@ class Tlog2ChartP2App(tk.Tk):
     # -------------------------------------------------------------------------
     def _init_plot(self):
         self.fig = Figure(figsize=(12, 6), dpi=100)
+        # Reserve bottom margin for visible start/stop time strings
+        self.fig.subplots_adjust(bottom=0.12)
         gs = self.fig.add_gridspec(3, 1, height_ratios=[2.0, 1.2, 1.6], hspace=0.10)
 
         self.ax_power = self.fig.add_subplot(gs[0, 0])
@@ -1241,6 +1333,22 @@ class Tlog2ChartP2App(tk.Tk):
         self.ax_vbias.set_ylabel("V / Bias")
         self.ax_vbias.set_xlabel("t(s)")
 
+        # Figure-level time texts (always visible within chart canvas)
+        self.fig_time_start_text = self.fig.text(
+            0.01, 0.01,
+            "Start: --",
+            ha="left", va="bottom", fontsize=10, color="red",
+            zorder=1000,
+            bbox=dict(facecolor="#fff7cc", edgecolor="red", boxstyle="round,pad=0.2")
+        )
+        self.fig_time_stop_text = self.fig.text(
+            0.99, 0.01,
+            "Stop: --",
+            ha="right", va="bottom", fontsize=10, color="red",
+            zorder=1000,
+            bbox=dict(facecolor="#fff7cc", edgecolor="red", boxstyle="round,pad=0.2")
+        )
+
         for ax in self.axes:
             ax.grid(True, alpha=0.3)
 
@@ -1248,6 +1356,15 @@ class Tlog2ChartP2App(tk.Tk):
         self.canvas.draw()
         # Pack canvas at the top, expand to fill available space
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # Time bar: show visible chart start/stop real times (updated on xlim changes)
+        self.time_bar = ttk.Frame(self.plot_frame)
+        self.tlog_start_label = ttk.Label(self.time_bar, text="", anchor=tk.W)
+        self.tlog_stop_label = ttk.Label(self.time_bar, text="", anchor=tk.E)
+        self.tlog_start_label.pack(side=tk.LEFT, padx=(8, 4))
+        self.tlog_stop_label.pack(side=tk.RIGHT, padx=(4, 8))
+        # pack time_bar above toolbar (toolbar packed later)
+        self.time_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
         # Pack toolbar at the bottom, fill horizontally
         self.toolbar = NavigationToolbar2Tk(self.canvas, self.plot_frame)
@@ -1258,6 +1375,12 @@ class Tlog2ChartP2App(tk.Tk):
         self.canvas.mpl_connect("motion_notify_event", self._on_mpl_motion)
         self.canvas.mpl_connect("button_press_event", self._on_mpl_press)
         self.canvas.mpl_connect("button_release_event", self._on_mpl_release)
+        # update visible real-time labels when x-axis limits change
+        try:
+            # connect to primary x-axis callbacks
+            self.ax_power.callbacks.connect('xlim_changed', lambda ax: self._update_visible_real_time_label())
+        except Exception:
+            pass
 
     # -------------------------------------------------------------------------
     # Zoom(Drag) Zone — X-axis only (works with twinx overlays)
@@ -2089,7 +2212,14 @@ class Tlog2ChartP2App(tk.Tk):
             self.ax_vbias_right.autoscale_view(scalex=False, scaley=True)
 
         self._init_zoom_zone()
+        # Update time labels BEFORE draw so figure text is rendered in this frame
+        try:
+            self._update_visible_real_time_label()
+        except Exception:
+            pass
         self.canvas.draw_idle()
+        # Schedule a delayed backup update+redraw to catch any post-draw xlim adjustments
+        self.after(150, self._update_time_labels_and_redraw)
 
     def _on_custom_scale(self):
         self._open_custom_scale_dialog()
@@ -2269,7 +2399,14 @@ class Tlog2ChartP2App(tk.Tk):
         set_ylim(self.ax_vbias_right, self.custom_scale.get("vR_min"), self.custom_scale.get("vR_max"))
 
         self._init_zoom_zone()
+        # Update time labels BEFORE draw so figure text is rendered in this frame
+        try:
+            self._update_visible_real_time_label()
+        except Exception:
+            pass
         self.canvas.draw_idle()
+        # Schedule a delayed backup update+redraw to catch any post-draw xlim adjustments
+        self.after(150, self._update_time_labels_and_redraw)
 
     # -------------------------------------------------------------------------
     # File Load / UI actions
@@ -2911,6 +3048,11 @@ class Tlog2ChartP2App(tk.Tk):
                     self.canvas.draw_idle()
                 except Exception:
                     pass
+            # update visible real-time start/stop labels (if mapping exists)
+            try:
+                self._update_visible_real_time_label()
+            except Exception:
+                pass
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
@@ -2926,3 +3068,81 @@ class Tlog2ChartP2App(tk.Tk):
                         self.canvas.draw_idle()
                     except Exception:
                         pass
+
+    def _update_visible_real_time_label(self):
+        """
+        Map the chart's current visible x-axis range to real-world datetime.
+        Uses the raw xlim values (no clamping) so that zooming/custom time
+        range is always reflected in the displayed start/stop times.
+        """
+        try:
+            if getattr(self, 'df', None) is None or self.df.empty:
+                self.tlog_start_label.config(text="")
+                self.tlog_stop_label.config(text="")
+                if hasattr(self, 'fig_time_start_text'):
+                    self.fig_time_start_text.set_text("Start: --")
+                if hasattr(self, 'fig_time_stop_text'):
+                    self.fig_time_stop_text.set_text("Stop: --")
+                return
+
+            ax = getattr(self, 'ax_power', None) or (self.axes[0] if getattr(self, 'axes', None) else None)
+            if ax is None:
+                return
+            xmin, xmax = ax.get_xlim()
+
+            # Resolve base_dt for mapping t(s) -> real-world datetime
+            base_dt = None
+            if isinstance(self.unit_info, dict) and self.unit_info.get('tlog_time_base_iso'):
+                try:
+                    base_dt = datetime.strptime(self.unit_info['tlog_time_base_iso'], '%Y-%m-%d %H:%M:%S.%f')
+                except Exception:
+                    base_dt = None
+
+            if base_dt is None and isinstance(self.unit_info, dict) and 'tlog_real_start' in self.unit_info and 't(s)' in self.df.columns:
+                try:
+                    real_start = datetime.strptime(self.unit_info['tlog_real_start'], '%Y-%m-%d %H:%M:%S')
+                    first_t = float(pd.to_numeric(self.df['t(s)'], errors='coerce').dropna().iloc[0])
+                    base_dt = real_start - timedelta(seconds=first_t)
+                except Exception:
+                    base_dt = None
+
+            if base_dt is None:
+                self.tlog_start_label.config(text="")
+                self.tlog_stop_label.config(text="")
+                if hasattr(self, 'fig_time_start_text'):
+                    self.fig_time_start_text.set_text("Start: --")
+                if hasattr(self, 'fig_time_stop_text'):
+                    self.fig_time_stop_text.set_text("Stop: --")
+                return
+
+            # Map raw chart xlim to real-world datetime (NO clamping)
+            start_dt = base_dt + timedelta(seconds=float(xmin))
+            stop_dt = base_dt + timedelta(seconds=float(xmax))
+            s = start_dt.strftime('%Y-%m-%d %H:%M:%S')
+            e = stop_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+            self.tlog_start_label.config(text=s)
+            self.tlog_stop_label.config(text=e)
+            if hasattr(self, 'fig_time_start_text'):
+                self.fig_time_start_text.set_text(f"Start: {s}")
+            if hasattr(self, 'fig_time_stop_text'):
+                self.fig_time_stop_text.set_text(f"Stop: {e}")
+        except Exception as e:
+            try:
+                self.tlog_start_label.config(text="")
+                self.tlog_stop_label.config(text="")
+                if hasattr(self, 'fig_time_start_text'):
+                    self.fig_time_start_text.set_text("Start: --")
+                if hasattr(self, 'fig_time_stop_text'):
+                    self.fig_time_stop_text.set_text("Stop: --")
+            except Exception:
+                pass
+
+    def _update_time_labels_and_redraw(self):
+        """Deferred helper: update time labels then redraw canvas so figure text is visible."""
+        try:
+            self._update_visible_real_time_label()
+            if hasattr(self, 'canvas') and self.canvas is not None:
+                self.canvas.draw_idle()
+        except Exception:
+            pass
