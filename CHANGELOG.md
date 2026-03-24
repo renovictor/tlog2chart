@@ -6,13 +6,13 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
-## [1.3.6] – 2026-03-10
+## [1.3.9] – 2026-03-24
+### Changed
+- Removed all debug print statements (`[TIMEDBG]`, `[DBG]`, `[CLEAN]`) from `tlog_reader.py` and `gui_app.py` for clean production output.
+- Bumped application version to 1.3.9.
+
 ### Fixed
-- Task I: Improved compatibility across multiple tlog formats (Tykon/Quantum/Chronos 2.x/Triton) including header variations and multi-header segments.
-- Task I: Chronos 2.0 parsing robustness improvements (header/time handling, token alignment) enabling correct Step 3 figure and metrics table generation.
-- UX: Added “Carry X → Analysis Input” from Custom Scale to copy X-axis min/max into Step 3 time window.
-- UX: Removed unnecessary “Phase 3 analysis started…please wait…” popup.
-- UX: Improved visibility of “Select items to plot” pull-down control.
+- Multi-tlog (double-download) file support confirmed working; multiple data-header segments are correctly detected, parsed, and concatenated.
 
 ## [1.3.8] - 2026-03-21
 ### Added

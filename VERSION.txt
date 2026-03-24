@@ -1,7 +1,7 @@
 Project: tlog2chart_P3
 
-Version: 1.3.7
-Date: 2026-03-19
+Version: 1.3.9
+Date: 2026-03-24
 
 Status:
 - Stable baseline after refactor
