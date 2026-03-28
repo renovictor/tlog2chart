@@ -27,7 +27,7 @@ $pkgDir = Join-Path $projRoot 'tlog2chart_p3'
 $dataFiles = @()
 function Add-DataIfExists($relPath, $dest) {
     $src = Join-Path $pkgDir $relPath
-    if (Test-Path $src) { $dataFiles += "${src};${dest}"; Write-Host "Include: $src -> $dest" }
+    if (Test-Path $src) { $script:dataFiles += "${src};${dest}"; Write-Host "Include: $src -> $dest" }
 }
 
 Add-DataIfExists 'asm-logo-small.gif' 'tlog2chart_p3'
@@ -35,9 +35,14 @@ Add-DataIfExists 'asm-logo.gif' 'tlog2chart_p3'
 Add-DataIfExists 'company_logo.png' 'tlog2chart_p3'
 Add-DataIfExists 'music.mp3' 'tlog2chart_p3'
 Add-DataIfExists 'music.ogg' 'tlog2chart_p3'
+Add-DataIfExists 'smithchart.ico' 'tlog2chart_p3'
 
-# Icon
-$iconPath = Join-Path $projRoot 'smithchart.ico'
+# Also bundle VERSION.txt from project root
+$versionTxt = Join-Path $projRoot 'VERSION.txt'
+if (Test-Path $versionTxt) { $script:dataFiles += "${versionTxt};."; Write-Host "Include: $versionTxt -> ." }
+
+# Icon (used for EXE file icon – lives inside the package dir)
+$iconPath = Join-Path $pkgDir 'smithchart.ico'
 if (-not (Test-Path $iconPath)) { Write-Warning "Icon not found: $iconPath" }
 
 # Build PyInstaller args
@@ -46,7 +51,7 @@ if (Test-Path $iconPath) { $pyiArgs += @('--icon', $iconPath) }
 foreach ($d in $dataFiles) { $pyiArgs += @('--add-data', $d) }
 
 # Hidden imports
-$hiddenImports = @('pygame', 'matplotlib.backends.backend_tkagg', 'docx')
+$hiddenImports = @('pygame', 'matplotlib.backends.backend_tkagg', 'docx', 'PIL', 'PIL._tkinter_finder')
 foreach ($h in $hiddenImports) { $pyiArgs += @('--hidden-import', $h) }
 
 # Entry script

@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
+## [1.3.10] – 2026-03-29
+### Added
+- Splash screen with progress bar on application startup: displays company logo, app name, and real-time module loading status (NumPy, Pandas, Matplotlib, PIL, docx) while heavy imports run in a background thread; dramatically improves perceived startup time for the frozen EXE.
+
+### Changed
+- Bumped application version to 1.3.10.
+
 ## [1.3.9] – 2026-03-24
 ### Changed
 - Removed all debug print statements (`[TIMEDBG]`, `[DBG]`, `[CLEAN]`) from `tlog_reader.py` and `gui_app.py` for clean production output.

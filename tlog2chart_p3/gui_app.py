@@ -6,7 +6,7 @@
 # If you use or modify this software, please retain this author information.
 #
 from __future__ import annotations
-from .version import APP_NAME, APP_VERSION
+from .version import APP_NAME, APP_VERSION, RELEASE_DATE
 import os
 import threading
 import traceback
@@ -36,11 +36,17 @@ from .utils import resource_path, read_project_version
 
 class Tlog2ChartP2App(tk.Tk):
     def __init__(self):
+
         super().__init__()
+
+        # --- Title-bar icon (set early, works reliably) ---
+        ico_path = resource_path('smithchart.ico')
         try:
-            self.iconbitmap(resource_path('smithchart.ico'))
+            self.iconbitmap(ico_path)
+            self.iconbitmap(default=ico_path)
         except Exception:
             pass
+
 
         ver = read_project_version()
         self.title(f"{APP_NAME} v{APP_VERSION}")
@@ -208,6 +214,55 @@ class Tlog2ChartP2App(tk.Tk):
 
         self.config(menu=menubar)
 
+        # --- Taskbar icon ---
+        # When frozen (EXE), PyInstaller --icon already embeds the correct icon;
+        # no runtime override needed.
+        # When running from source (python.exe), we must force the icon via Win32 API.
+        self._taskbar_icon = None  # prevent GC
+        if not getattr(sys, 'frozen', False):
+            self.after(200, self._apply_taskbar_icon)
+
+    def _apply_taskbar_icon(self):
+        """Force the Windows taskbar icon via Win32 API (only used when running from source)."""
+        ico_path = resource_path('smithchart.ico')
+        if not os.path.isfile(ico_path):
+            return
+
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+
+            hwnd = user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+
+            IMAGE_ICON = 1
+            LR_LOADFROMFILE = 0x0010
+            WM_SETICON = 0x0080
+            ICON_BIG = 1    # 32x32 – taskbar & alt-tab
+            ICON_SMALL = 0  # 16x16 – title bar
+
+            hicon_big = user32.LoadImageW(
+                0, ico_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE)
+            hicon_small = user32.LoadImageW(
+                0, ico_path, IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+
+            if hicon_big:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big)
+            if hicon_small:
+                user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+            return
+        except Exception:
+            pass
+
+        try:
+            from PIL import Image, ImageTk
+            img = Image.open(ico_path).resize((48, 48), Image.LANCZOS)
+            self._taskbar_icon = ImageTk.PhotoImage(img)
+            self.wm_iconphoto(True, self._taskbar_icon)
+        except Exception:
+            pass
+
     def _on_about(self):
         # Create a modal About dialog with logo and structured info (matches provided design)
         win = tk.Toplevel(self)
@@ -244,15 +299,8 @@ class Tlog2ChartP2App(tk.Tk):
         title_lbl = ttk.Label(frm, text=APP_NAME.replace('_', ' '), font=(None, 14, 'bold'))
         title_lbl.pack(side=tk.TOP)
 
-        # Version and release date (try to read project release date if available)
-        ver_text = f"Version {APP_VERSION}"
-        try:
-            # read_project_version may return only version; include if different
-            proj_ver = read_project_version()
-            if proj_ver and proj_ver != APP_VERSION:
-                ver_text = f"Version {APP_VERSION} | Released {proj_ver}"
-        except Exception:
-            pass
+        # Version and release date
+        ver_text = f"Version {APP_VERSION}  |  Released {RELEASE_DATE}"
 
         ver_lbl = ttk.Label(frm, text=ver_text, font=(None, 10))
         ver_lbl.pack(side=tk.TOP, pady=(4, 8))

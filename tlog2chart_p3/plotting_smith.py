@@ -140,14 +140,11 @@ def plot_smith_rlxl_hf_lf(
         ax.legend(loc="lower left", fontsize=9, framealpha=0.9)
         return ret
 
-        ok = _plot_one("All", df, "#d62728")
-        if not ok:
-            ax.text(0, 0, "No points above threshold", ha="center", va="center", fontsize=12)
-            return ret
-
-        ax.legend(loc="lower left", fontsize=9, framealpha=0.9)
+    ok = _plot_one("All", df, "#d62728")
+    if not ok:
+        ax.text(0, 0, "No points above threshold", ha="center", va="center", fontsize=12)
         return ret
 
-    _plot_one("All", df, "#d62728")
     ax.legend(loc="lower left", fontsize=9, framealpha=0.9)
     return ret
+
