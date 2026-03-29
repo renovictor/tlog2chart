@@ -6,6 +6,34 @@ All notable changes to this project are documented in this file.
 
 This project follows a project-level versioning scheme.
 
+## [1.3.12] - 2026-03-30
+### Changed
+- Step 4 alarm report is finalized for all product families with unit-aware setpoint handling and alarm-focused output.
+- Step 6 section in the Word report is now explicitly presented as a dedicated pulse-mode alarm step.
+- Bumped application version to 1.3.12.
+
+### Added
+- Step 6 now flags `PulseFreqNotDetected` and `PulseDutyNotDetected` when pulse mode is present but frequency/duty values are missing or invalid.
+- Step 6 now explicitly reports CW-only logs as: `No pulse mode detected in this tlog (CW-only).`
+
+### Verified
+- Step 4 and Step 5 behavior remains stable after Step 6 updates.
+
+## [1.3.11] – 2026-03-29
+### Changed
+- Step 1 report overview now summarizes full-scale duration, mode classification, max forward power, second-highest forward power, and RF ON/OFF cycle count.
+- Step 2 report view now shows the last 2 seconds of the tlog instead of a full-span/100 zoom rule.
+- Step 3 report figure caption updated to `Power plot for the user-selected custom time range.`
+- Bumped application version to 1.3.11.
+
+### Fixed
+- Corrected Step 1 duration calculation to use the continuous tlog time base.
+- Corrected Step 1 second-highest Pfwd logic to ignore RF ramp-up data immediately after RF ON and require a value at least 20% below the maximum.
+- Restored Step 3 custom time-range figure generation in the Word report.
+- Corrected Step 3 plot x-axis to preserve the user-selected absolute time range instead of rebasing the sliced plot near 0 seconds.
+- Corrected Step 3 metrics to use only RF cycles overlapping the selected custom time window.
+- Fixed GUI-to-analysis handoff so the Step 3 custom time range is actually passed into `p3_run_analysis()`.
+
 ## [1.3.10] – 2026-03-29
 ### Added
 - Splash screen with progress bar on application startup: displays company logo, app name, and real-time module loading status (NumPy, Pandas, Matplotlib, PIL, docx) while heavy imports run in a background thread; dramatically improves perceived startup time for the frozen EXE.

@@ -4,9 +4,9 @@ Professional tool for loading, visualizing, and analyzing EVC `.tlog` files.
 
 ## Version Information
 
-- Current version: **v1.3.10**
-- Release date: **2026-03-29**
-- Startup improvement in this version: application now shows a splash screen with loading progress so users see feedback immediately while the EXE initializes.
+- Current version: **v1.3.12**
+- Release date: **2026-03-30**
+- This version finalizes Step 4/5/6 report behavior: Step 4 alarm logic is product-aware, Step 5 remains stable, and Step 6 now clearly reports pulse-detection missing conditions and CW-only logs.
 
 ## What This App Does
 
@@ -24,7 +24,7 @@ This application is intended to run from the packaged Windows executable.
 
 1. Open the project folder.
 2. Go to `dist`.
-3. Double-click the EXE file (example: `tlog2chart_P3_v1.3.10.exe`).
+3. Double-click the EXE file (example: `tlog2chart_P3_v1.3.12.exe`).
 
 If startup takes some time, this is expected for a one-file EXE. You should see a splash/loading window during initialization.
 
@@ -46,7 +46,7 @@ If startup takes some time, this is expected for a one-file EXE. You should see 
 
 ### 1) Why does the app take time to open?
 - This EXE is packaged in one file, so it needs time to unpack and load modules at startup.
-- In v1.3.10, a splash/loading window is shown so you can see startup progress.
+- A splash/loading window is shown so you can see startup progress.
 
 ### 2) I loaded a `.tlog` file but no chart appears. What should I check?
 - Confirm the file is a valid tlog text file and not empty.
