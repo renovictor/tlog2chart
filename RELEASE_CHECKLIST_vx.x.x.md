@@ -1,6 +1,6 @@
 # Release checklist — `vx.x.x`
 
-Use this checklist to prepare, build, validate and publish a release for the tlog2chart_p3 application. Replace `vx.x.x` with the real version (for example `v1.3.8`).
+Use this checklist to prepare, build, validate and publish a release for the tlog2chart_p3 application. Replace `vx.x.x` with the real version (for example `v1.3.11`).
 
 ---
 
@@ -19,7 +19,7 @@ Use this checklist to prepare, build, validate and publish a release for the tlo
 
 ### 0. Prepare: update version and changelog
 
-- Update `VERSION.txt` to the new version string (e.g. `v1.3.8`).
+- Update `VERSION.txt` to the new version string (e.g. `v1.3.11`).
 - Update `CHANGELOG.md` with release notes for the new version.
 - Ensure the `README.md` and any about/help text inside the GUI mentions the new version if required.
 
@@ -152,16 +152,16 @@ On a clean environment (or at least a different directory/machine), perform thes
 5. If distributing an installer or uploading to releases, attach the EXE and any ZIP/installer.
 
 
-## Example: release `v1.3.8`
+## Example: release `v1.3.11`
 
-Replace the placeholder with the actual version and follow steps above. Example git commands for v1.3.8:
+Replace the placeholder with the actual version and follow steps above. Example git commands for v1.3.11:
 
 ```powershell
 git add -A
-git commit -m "Release v1.3.8"
-git tag -a v1.3.8 -m "Release v1.3.8"
+git commit -m "Release v1.3.11"
+git tag -a v1.3.11 -m "Release v1.3.11"
 git push origin HEAD
-git push origin v1.3.8
+git push origin v1.3.11
 ```
 
 
@@ -175,7 +175,7 @@ git push origin v1.3.8
 ---
 
 If you want, I can now:
-- Replace `vx.x.x` with `v1.3.8` and create `RELEASE_CHECKLIST_v1.3.8.md` instead, or
-- Update `VERSION.txt` and `CHANGELOG.md` and create a sample git commit and tag for `v1.3.8`.
+- Replace `vx.x.x` with `v1.3.11` and create `RELEASE_CHECKLIST_v1.3.11.md` instead, or
+- Update `VERSION.txt` and `CHANGELOG.md` and create a sample git commit and tag for `v1.3.11`.
 
 Tell me which of the two you prefer and I will proceed (I can also perform the git commit/tag if you want and if the environment has git configured).
