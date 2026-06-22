@@ -1,17 +1,18 @@
 Project: tlog2chart_P3
 
-Version: 1.3.12
-Date: 2026-03-30
+Version: 1.3.13
+Date: 2026-06-23
 
 Status:
-- Stable release with Step 4/5 alarm workflow and Step 6 pulse-detection reporting updates
-- Verified with custom-range analysis workflow
+- Stable release with landscape report orientation, Step 3 energy metrics, and parameter conversion
+- Verified with Step 3 custom-range analysis and Word report export
 
 Summary:
-- Step 4 alarm report supports generator+match units (Tykon/Triton) and match-only units (Quantum/Chronos) with proper setpoint source logic
-- Step 5 reflected-power reporting remains stable and verified
-- Step 6 now reports missing pulse frequency/duty detection when pulse mode exists
-- Step 6 now explicitly reports CW-only logs as "No pulse mode detected"
+- Word report now in Landscape orientation for better table layout
+- Step 3 cycle metrics table now includes Energy (J) column calculated via trapezoidal integration of delivery power (Pfwd - Pref)
+- Energy display: ≥1 J shows 2 decimals, <1 J shows 3 decimals for better precision on small values
+- Added parameter format conversion utility (tlog to par template format)
+- Improved error handling and import robustness
 
 Notes:
 - This version establishes the foundation for:
@@ -143,3 +144,65 @@ Notes:
 
 ### Known Issues
 - Unit Type auto-detection for Tykon variants may default to **Tykon1213** even when loading a **Tykon0527 (27.12 MHz)** log. Manual selection of unit type is recommended when parameter descriptions must match the exact Tykon variant. Root cause: multiple unit-type setters exist in GUI logic and the frequency-based discriminator (Match param **127**) is not consistently applied at runtime; param 127 distinguishes **27.120 MHz (Tykon0527)** vs **13.560 MHz (Tykon1213)**. [1](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/07%20Tykon0527%20par%20list.txt)[1](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/07%20Tykon0527%20par%20list.txt)[2](https://oneasm-my.sharepoint.com/personal/victor_huang_asm_com/Documents/Microsoft%20Copilot%20Chat%20Files/07%20Tykon1213%20par%20list.txt)
+
+## [1.3.9] - 2026-06-09
+### Added
+- Step 3 cycle energy calculation using trapezoidal integration of delivery power (Pfwd - Pref)
+- Parameter format conversion utility: convert tlog parameter extractions to par template format
+- Comprehensive documentation for parameter conversion (9+ guide files)
+
+### Changed
+- Word report orientation now Landscape for better table layout and readability
+- Step 3 table now includes Energy (J) column (12 columns total from previous 11)
+- Energy display formatting: ≥1 J shows 2 decimals, <1 J shows 3 decimals for precision
+
+### Fixed
+- Removed SciPy dependency; implemented NumPy-only trapezoidal integration helper function
+- Import robustness: added comprehensive error logging for debugging
+
+### Known Issues
+- Unit Type auto-detection for Tykon variants may default to **Tykon1213** even when loading a **Tykon0527 (27.12 MHz)** log. Manual selection of unit type is recommended when parameter descriptions must match the exact Tykon variant.
+
+## [1.3.10] – 2026-06-15
+### Added
+- Splash screen progress bar with status updates during module initialization
+- Async import loading: NumPy, Pandas, Matplotlib, PIL, python-docx show progress while loading
+- Better UX for first app startup (20+ seconds on cold start)
+
+### Changed
+- Bumped application version to 1.3.10
+
+## [1.3.11] – 2026-06-18
+### Added
+- Step 1 full-scale duration reporting (ms and seconds)
+- Step 1 RF ON/OFF cycle counting from RF:UC signal
+- Step 1 mode classification (CW-only, Pulse-only, Mixed CW+Pulse)
+- Step 1 second-highest Pfwd reporting (≥20% lower than max)
+
+### Fixed
+- Step 3 title now correctly reflects custom time range analysis
+- Step 3 cycle metrics correctly filtered by custom time window
+- Report Step 3 figure properly displays custom range
+
+## [1.3.12] – 2026-06-20
+### Added
+- Step 4 forward power vs setpoint alarm report with multi-unit support
+  - Tykon/Triton (generator+match): hardware setpoint source
+  - Quantum/Chronos (match-only): derived setpoint (50–100% avg Pfwd)
+- Step 5 reflected power (Pref) high-condition detection
+- Step 6 pulse mode range alarms (Freq and Duty validation)
+
+### Fixed
+- Alarm reporting now includes rise time, overshoot, and mismatch detection
+
+## [1.3.13] – 2026-06-23
+### Added
+- Parameter conversion from tlog to par template format
+- Complete documentation and examples for parameter handling
+
+### Changed
+- Energy display precision (3 decimals for <1 J, 2 for ≥1 J)
+
+### Verified
+- Multi-format tlog support (Tykon, Quantum, Triton, Chronos 2.x)
+- Step 1–6 complete analysis workflow
